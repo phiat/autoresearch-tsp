@@ -40,6 +40,33 @@ count covered by the latest recap (visible in its results table).
   recap-N` section condensing the prior recap to ~8-15 lines, then
   proceed with the standard sections for the new range.
 
+## Tooling observations (mandatory section)
+
+In addition to the data-side recap, include a **Tooling observations**
+section that flags:
+
+- **Skill non-invocations**: which skills *should* have been invoked
+  during the cycles this recap covers, but weren't? Common patterns
+  to flag:
+  - 5+ consecutive discards but `postmortem` never fired (per
+    program.md's Stuck protocol).
+  - Discards with |delta| < 750 but `multi-seed-eval` never fired
+    (per program.md's RNG noise floor rule).
+  - Long stretch of agent-self-generated growth ticks but
+    `paper-researcher` never fired since the last research tick.
+  - Idea pool has untested research-injected items (L10/X13/P6 in
+    heuristic; M7/T8/R6 in neural) but the agent kept micro-tweaking
+    saturated veins.
+- **Idea-vein exhaustion**: any classes/veins that hit 5+ discards in
+  a row this recap and should be annotated `[exhausted: rows X-Y]`
+  in `ideas.md` to discourage future re-picks.
+- **Hooks misfires**: any sentinel files that lingered (e.g.
+  `.recap-pending` not cleared by a prior recap) or hooks that
+  blocked legitimate edits.
+
+Keep this section terse — 3-6 bullets. The point is to surface the
+process drift, not to fix it; the human sees this and can intervene.
+
 ## Required structure for any recap
 
 ```

@@ -74,6 +74,15 @@ just metrics          # pull val_cost / solve_seconds from last run.log
   (best `val_cost` over cycle index for both loops, with SOTA
   reference line). Use after every recap-tick, after a notable new
   best, or whenever the README chart looks stale.
+- **`multi-seed-eval`** — re-run a candidate experiment with 2-3
+  different `ILS_SEED` values, report median val_cost. **Mandatory**
+  before declaring a discard whose |delta vs best| < 750 (1.5× the
+  ~500 noise floor). Catches false negatives from single-seed luck.
+- **`untried-ideas`** — enumerate `ideas.md` items that have NOT
+  been tested yet, bucketed by class and provenance (seed /
+  growth-cycle / research / permute / manual). Use when the stuck
+  protocol triggers, before `paper-researcher`, or when picking the
+  next experiment to avoid re-tweaking saturated veins.
 - **`evolve-tooling`** — modify `.claude/` itself (skills, subagents,
   hooks, slash commands) based on observed friction. Append-only on
   evidence. Use when a recurring chore could be automated, when an

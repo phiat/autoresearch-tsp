@@ -9,6 +9,9 @@ Pause the loop, look at what's happening, identify the bottleneck.
 
 ## When to use
 
+- **Mandatory after 5 consecutive discards** — `program.md`'s "Stuck
+  protocol" requires this. Don't sample the next idea until
+  postmortem has classified the bottleneck.
 - Several recent runs in a row have produced near-zero deltas (loop
   is on a plateau).
 - A class of ideas has produced a string of discards.
@@ -37,13 +40,21 @@ None required. The skill reads:
    - Time spent: is solve_seconds always 300.0 (capped) or are some
      experiments terminating early?
 3. **Diagnose the bottleneck** — pick exactly one of:
-   - **Algorithmic**: current move set is saturated, need a new one.
+   - **Saturated move-set** (algorithmic): current move classes are
+     exhausted; need a structurally new one. → next idea MUST come
+     from `untried-ideas` research-injected pool, not from adjacent
+     micro-tweaks.
+   - **Saturated hyperparam**: same algorithm, knobs have been
+     swept; small-value tuning won't help further.
    - **Engineering**: algorithms have headroom but can't fit in budget;
      speed-up ideas (D-class) are the unlock.
    - **Diversification**: stuck in a basin; need stronger perturbation
      (P-class) or multi-start (C-class).
    - **Metric mismatch**: improving euclidean tour but the prime
      penalty is the residual cost; need Z-class moves.
+   - **RNG-noise-floor**: discards are within the ~500-cost noise
+     band; the agent is being fooled by single-seed luck →
+     `multi-seed-eval` should be invoked on borderline cases.
 4. **Recommend** exactly one next idea and one fallback. Pull from
    `ideas.md` if a fitting item exists; otherwise propose a new
    1-line entry in the right class and suggest invoking

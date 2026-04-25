@@ -153,6 +153,51 @@ d4e5f6g	0	0	crash	scipy KDTree call with bad k argument
 
 `results.tsv` is gitignored — local-only ledger.
 
+## RNG noise floor and multi-seed evaluation
+
+The solver is rng-seed-dependent. Empirically (see recap-7, recap-8,
+the RngCafe experiment at row 54), the **single-seed noise floor for
+this loop is ~500 cost units**. A discard with |delta| < 500 is *not
+necessarily a regression* — it may be the same algorithm running into
+a different basin under the seed.
+
+**Rule**: before declaring a discard for any |delta| < 750 (1.5× noise
+floor), invoke `multi-seed-eval` on the candidate. It re-runs the same
+solve.py with 2-3 different `ILS_SEED` values and reports the median
+val_cost. If the median beats the prior best, *keep* it; if not,
+*then* discard.
+
+The current best (X8 at 1,547,351) is itself rng-luck-dependent — the
+0xBEEF seed happened to land in a deeper basin than 0xCAFE. Do not
+treat any single-seed value as the algorithm's true ceiling.
+
+## Stuck protocol — break long discard streaks
+
+The keep/revert mechanic is honest about each experiment, but it does
+not by itself escape exhausted veins. Recaps 6, 7, 8 documented
+discard streaks of 7, 10, and 25 cycles where the agent kept sampling
+adjacent micro-tweaks (Or-opt L variants, GLS λ values, restart
+schedules) of the same saturated mechanism.
+
+**Hard rules** (apply on top of the standard sampling protocol):
+
+- **After 5 consecutive discards**: STOP the cycle. Invoke the
+  `postmortem` skill. Read its bottleneck classification.
+- **If `postmortem` flags "saturated move-set"**: the next experiment
+  MUST come from the *untried-research-injected* pool — invoke
+  `untried-ideas` to enumerate. Do NOT pick another adjacent
+  hyperparam tweak in the saturated vein.
+- **After 10 consecutive discards**: invoke `paper-researcher` with
+  an explicit era directive (`classical` or `hybrid`) to inject fresh
+  ideas, then sample one of those next.
+- **After 15 consecutive discards in the same vein**: declare the
+  vein closed in `ideas.md` (annotate the relevant items as
+  `[exhausted: rows X-Y]`) so future cycles don't re-pick them.
+
+These are not optional. The recap-writer subagent's "Tooling
+observations" section will note when these triggers fired (or
+should have fired and didn't).
+
 ## The experiment loop
 
 LOOP FOREVER:

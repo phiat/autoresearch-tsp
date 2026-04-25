@@ -118,6 +118,43 @@ Status: `keep` / `discard` / `crash`. Description should make the
 *learning aspect* explicit (e.g. "M3: train 2-layer MLP on harvested
 move features, integrate as candidate ranker").
 
+## RNG noise floor and multi-seed evaluation
+
+The solver is rng-seed-dependent. The neural loop's empirical noise
+floor is **~250-500 cost units** (smaller than heuristic's because
+PILS averages across batch members, but still real). A discard with
+|delta| < 500 is *not necessarily a regression*.
+
+**Rule**: before declaring a discard for any |delta| < 750, invoke
+`multi-seed-eval` on the candidate. It re-runs solve.py with 2-3
+different `ILS_SEED` values and reports the median val_cost. If the
+median beats the prior best, *keep*; if not, *then* discard.
+
+## Stuck protocol — break long discard streaks
+
+The keep/revert mechanic is honest per-experiment but does not escape
+exhausted veins. The recaps document multiple streaks (recap-2 had
+4-for-4 discards on PILS knob-sweeps) where the agent kept tuning
+the same axis instead of trying a structurally-new idea.
+
+**Hard rules** (on top of the standard sampling protocol):
+
+- **After 5 consecutive discards**: STOP. Invoke the `postmortem`
+  skill. Read its bottleneck classification.
+- **If `postmortem` flags "saturated move-set"** or "saturated
+  hyperparam"**: next experiment MUST come from the
+  *untried-research-injected* pool — invoke `untried-ideas`. No
+  more adjacent micro-tweaks in the saturated vein.
+- **After 10 consecutive discards**: invoke `paper-researcher` with
+  an explicit era directive (`hybrid` or `modern-learned`) to inject
+  fresh ideas, then sample one of those next.
+- **After 15 consecutive discards in the same vein**: declare the
+  vein closed in `ideas.md` (annotate items as
+  `[exhausted: rows X-Y]`).
+
+The recap-writer subagent's "Tooling observations" section flags
+whether these triggers fired when they should have.
+
 ## The loop
 
 Same shape as `tsp_heuristic/program.md`:

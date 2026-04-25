@@ -88,6 +88,15 @@ Inherited from `tsp_heuristic/` (same shape, different context):
   (best `val_cost` over cycle index for both loops, with SOTA
   reference line). Use after every recap-tick, after a notable new
   best, or whenever the README chart looks stale.
+- **`multi-seed-eval`** — re-run a candidate experiment with 2-3
+  different `ILS_SEED` values, report median val_cost. **Mandatory**
+  before declaring a discard whose |delta vs best| < 750 (1.5× the
+  ~250-500 noise floor). Catches false negatives from single-seed luck.
+- **`untried-ideas`** — enumerate `ideas.md` items that have NOT
+  been tested yet, bucketed by class (M/T/R/I/E/C) and provenance
+  (seed / growth-cycle / research / permute / manual). Use when the
+  stuck protocol triggers, before `paper-researcher`, or when picking
+  the next experiment to avoid re-tweaking saturated veins.
 - **`evolve-tooling`** — modify `.claude/` itself.
 
 Project-specific:
