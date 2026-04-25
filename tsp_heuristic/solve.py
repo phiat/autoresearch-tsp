@@ -509,12 +509,10 @@ def solve(xy, is_prime, budget):
         else:
             cand = best_tour
             r = rng.random()
-            if r < 0.25:
+            if r < 1.0 / 3.0:
                 cand = double_bridge(cand, rng)
-            elif r < 0.50:
+            elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
-            elif r < 0.75:
-                cand = lns_perturb(cand, rng, xy, candidates, frac=0.010)
             else:
                 cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
