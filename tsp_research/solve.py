@@ -390,17 +390,24 @@ def solve(xy, is_prime, budget):
     if budget.remaining() < 1:
         return best_tour
 
-    print("  running ILS (adaptive double-bridge + local-search) ...")
+    print("  running ILS (perturb + local-search, random NN restart on stuck) ...")
     rng = np.random.default_rng(0xBEEF)
     iters = 0
     accepts = 0
+    restarts = 0
     no_improve = 0
-    strength = 1
-    ESCALATE_AFTER = 30
-    MAX_STRENGTH = 3
+    RESTART_AFTER = 40
     while not budget.expired():
-        cand = best_tour
-        for _ in range(strength):
+        if no_improve >= RESTART_AFTER:
+            seed = int(rng.integers(1, n))
+            cand, _ = fast_nn(xy, candidates, seed)
+            idx = int(np.where(cand == START_CITY)[0][0])
+            cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
+            no_improve = 0
+            restarts += 1
+            print(f"    [iter {iters}] RANDOM RESTART from city {seed}")
+        else:
+            cand = best_tour
             if rng.random() < 0.5:
                 cand = double_bridge(cand, rng)
             else:
@@ -416,16 +423,11 @@ def solve(xy, is_prime, budget):
             best_tour = cand.copy()
             accepts += 1
             no_improve = 0
-            strength = 1
             print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
                   f"remaining {budget.remaining():.1f}s")
         else:
             no_improve += 1
-            if no_improve >= ESCALATE_AFTER and strength < MAX_STRENGTH:
-                strength += 1
-                no_improve = 0
-                print(f"    [iter {iters}] escalating perturbation strength to {strength}")
-    print(f"  ILS done: {iters} iters, {accepts} improvements (final strength={strength})")
+    print(f"  ILS done: {iters} iters, {accepts} improvements, {restarts} restarts")
 
     print("  running prime-swap post-pass ...")
     pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
