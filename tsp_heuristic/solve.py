@@ -495,7 +495,7 @@ def solve(xy, is_prime, budget):
     accepts = 0
     restarts = 0
     no_improve = 0
-    RESTART_AFTER = 40
+    RESTART_AFTER = 25
     while not budget.expired():
         if no_improve >= RESTART_AFTER:
             seed = int(rng.integers(1, n))
