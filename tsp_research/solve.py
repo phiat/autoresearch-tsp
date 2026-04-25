@@ -156,11 +156,12 @@ def build_candidates(xy, k):
 
 @njit(cache=True, fastmath=True)
 def or_seg_sweep(tour, pos, xy, candidates, L):
-    """Or-opt with segment length L (1, 2, or 3). For L>=2, evaluates BOTH forward
+    """Or-opt for arbitrary segment length L. For L>=2, evaluates BOTH forward
     and reversed re-insertion at each candidate target and picks the best."""
     n = len(xy)
     K = candidates.shape[1]
     n_imp = 0
+    seg = np.empty(L, dtype=tour.dtype)
     for s in range(1, n - L + 1):
         x0 = tour[s]
         xL = tour[s + L - 1]
@@ -175,7 +176,6 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
         best_gain = 1e-12
         best_t = -1
         best_rev = False
-        # Search candidates of BOTH segment endpoints (x0 and xL); for L=1 they're equal.
         n_src = 2 if L >= 2 else 1
         for src_idx in range(n_src):
             src = x0 if src_idx == 0 else xL
@@ -207,40 +207,29 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
         if best_t < 0:
             continue
         t = best_t
-        seg0 = tour[s]
-        seg1 = tour[s + 1] if L >= 2 else 0
-        seg2 = tour[s + 2] if L >= 3 else 0
+        # Stash segment (in target placement order — reversed if best_rev).
         if best_rev:
-            if L == 2:
-                seg0, seg1 = seg1, seg0
-            else:  # L == 3
-                seg0, seg2 = seg2, seg0
+            for q in range(L):
+                seg[q] = tour[s + L - 1 - q]
+        else:
+            for q in range(L):
+                seg[q] = tour[s + q]
         if t < s - 1:
             for q in range(s + L - 1, t + L, -1):
                 cy = tour[q - L]
                 tour[q] = cy
                 pos[cy] = q
-            tour[t + 1] = seg0
-            pos[seg0] = t + 1
-            if L >= 2:
-                tour[t + 2] = seg1
-                pos[seg1] = t + 2
-            if L >= 3:
-                tour[t + 3] = seg2
-                pos[seg2] = t + 3
+            for q in range(L):
+                tour[t + 1 + q] = seg[q]
+                pos[seg[q]] = t + 1 + q
         else:
             for q in range(s, t - L + 1):
                 cy = tour[q + L]
                 tour[q] = cy
                 pos[cy] = q
-            tour[t - L + 1] = seg0
-            pos[seg0] = t - L + 1
-            if L >= 2:
-                tour[t - L + 2] = seg1
-                pos[seg1] = t - L + 2
-            if L >= 3:
-                tour[t - L + 3] = seg2
-                pos[seg2] = t - L + 3
+            for q in range(L):
+                tour[t - L + 1 + q] = seg[q]
+                pos[seg[q]] = t - L + 1 + q
         n_imp += 1
     return n_imp
 
@@ -336,7 +325,7 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
                 break
         total_2opt += s2
         any_or = 0
-        for L in (1, 2, 3):
+        for L in (1, 2, 3, 4, 5):
             if budget.expired():
                 break
             sL = 0
