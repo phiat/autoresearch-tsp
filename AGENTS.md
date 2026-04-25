@@ -2,51 +2,22 @@
 
 ## Sub-projects
 
-- **`tsp_heuristic/`** — autonomous research loop for the Kaggle Santa
-  2018 TSP. Has its own `AGENTS.md`, `program.md`, and a `.claude/`
-  with skills, subagents, slash commands, and hooks. If you're
-  driving the loop, work from inside `tsp_heuristic/` and read its
-  `AGENTS.md` first.
+- **`tsp_heuristic/`** — classical heuristic-search loop for the Kaggle
+  Santa 2018 TSP. Runs on a `heuristic/<tag>` branch in this working tree.
+  Has its own `AGENTS.md`, `program.md`, and `.claude/` toolset.
+- **`tsp_neural/`** — neural-guided local search loop on the same
+  task. Designed to run in a **separate git worktree** on a
+  `neural/<tag>` branch so it can run in parallel with
+  `tsp_heuristic/` without `HEAD` conflicts. Has its own
+  `AGENTS.md`, `program.md`, `.claude/` (with an extra `train-policy`
+  skill), and PyTorch in deps.
 - **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
   its own git repo. Reference only; do not modify.
 
-## Working alongside a live loop session
-
-There is often a separate Claude Code session running the autonomous
-loop in `tsp_heuristic/` on branch `heuristic/<tag>`. It uses the same
-working tree as you. Disrupting its view of git state confuses it.
-
-**Rules when the loop is live:**
-
-- **Do not switch branches** in this working tree. The loop watches
-  `git status` / `git log`, and a branch flip out from under it
-  triggers "I'm somewhere I didn't expect, let me investigate"
-  detours that waste cycles. If you must work on `main`, do it in a
-  worktree (`git worktree add`).
-- **Do not push to `main` mid-cycle.** The loop occasionally merges
-  `main` into its experiment branch; an unfamiliar `main` commit
-  arriving from nowhere reads to the loop as a mystery commit it
-  needs to investigate. If you have to update `main`, prefer batching
-  changes and timing the push between cycles, or pre-announce the
-  commit in the loop's session.
-- **Do not commit on the loop's branch.** The loop reverts via
-  `git reset --hard HEAD~1` for discarded experiments — any commit
-  you slip in on top can be wiped. (It's still in the reflog, but
-  it's noise.) Stage `meta:` tooling changes on `main` and let the
-  loop pick them up via its own merge.
-- **If you must intervene**, send a one-line message in the loop's
-  session explaining what happened (e.g. *"that commit on main is
-  yours — meta: chore, safe to merge or ignore"*). Don't reach into
-  the loop's branch from outside.
-- **Editing files outside `tsp_heuristic/`** is generally safe; the
-  loop only watches git and its own working dir. But edits inside
-  `tsp_heuristic/` can show up in the loop's `git status` and look
-  like uncommitted experiment changes — avoid unless coordinating.
-
-Lesson learned the hard way during the apr25 session: a switch to
-`main` + commit + push, done while the loop was between cycles,
-caused the loop to spend a turn investigating an unfamiliar HEAD on
-its own branch when it next ran `git status`.
+When both loops are live, **two Claude Code sessions** are running —
+one in this working tree's `tsp_heuristic/`, one in the worktree's
+`tsp_neural/`. They share `.git/` (branches are mutually visible) but
+never share `HEAD`. See the outer `README.md` for worktree setup.
 
 ## Issue tracking
 
@@ -132,3 +103,25 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+## Running two loops in parallel (worktrees)
+
+When `tsp_heuristic/` and `tsp_neural/` are both live, each runs in its
+own **git worktree** (sibling working directories sharing the same
+`.git/`), so neither flips the other's `HEAD`. Sessions for the two
+loops are completely independent and never see each other's working
+tree.
+
+The "Working alongside a live loop session" rules above apply
+**per-worktree**. Additionally:
+
+- Don't reach across worktrees with `git checkout` or branch ops.
+- `meta:` commits affect both loops; batch them, land on `main`, let
+  each loop's agent merge `main` into its branch on its own schedule.
+- `compare-runs` across worktrees works (branches mutually visible)
+  but the data files (`results.tsv`, `moves/`, `checkpoints/`) are
+  per-worktree-local — bring artefacts to one place if you want a
+  joint analysis.
+
+See the outer `README.md` "Running both loops in parallel" section for
+the worktree setup commands.
