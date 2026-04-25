@@ -42,6 +42,7 @@ import harvest as _harvest
 
 K_NEIGHBORS = 10
 HARVEST = os.environ.get("HARVEST", "0") == "1"
+MODE = os.environ.get("MODE", "solve")
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +268,17 @@ def solve(xy, is_prime, budget, harvest_bufs=None):
 
 
 def main():
+    if MODE == "train":
+        import train
+        try:
+            tag = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"]
+            ).decode().strip()
+        except Exception:
+            tag = "uncommitted"
+        train.train_and_eval(tag=tag)
+        return
+
     t_start = time.perf_counter()
     print(f"loading cities ...")
     xy, is_prime = load_cities()
