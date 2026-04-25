@@ -87,7 +87,7 @@ out-of-band cron driver (separate from either loop's session).
 
 ## Status
 
-*As of 2026-04-25 19:11 EDT. SOTA = 1,514,000 (Santa 2018 top
+*As of 2026-04-25 19:41 EDT. SOTA = 1,514,000 (Santa 2018 top
 public-LB). `val_cost` is the official Santa 2018 cost (lower is
 better). `% SOTA` = `100 − gap`, where `gap = (val_cost − SOTA) / SOTA`.
 **Δ12** = improvement in `% SOTA` over the last 12 experiments (in
@@ -95,8 +95,8 @@ percentage points; positive = progressing).*
 
 | Loop | % SOTA | Δ12 | Best `val_cost` | Cycles |
 |---|---|---|---|---|
-| `tsp_heuristic/` | 97.80% | +0.000pp | 1,547,351 | 64 |
-| `tsp_neural/`    | 97.54% | +0.022pp | 1,551,306 | 46 |
+| `tsp_heuristic/` | 97.80% | +0.000pp | 1,547,351 | 65 |
+| `tsp_neural/`    | 97.55% | +0.032pp | 1,551,147 | 47 |
 
 ![Progress](progress.png)
 
