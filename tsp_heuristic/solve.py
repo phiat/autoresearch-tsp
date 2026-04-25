@@ -410,6 +410,27 @@ def lns_perturb(tour, rng, xy, candidates, frac=0.015):
     return _lns_relink(tour, xy, candidates, removed_set, rem)
 
 
+def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0):
+    """LNS variant that biases the destroy-set toward penalty-origin cities
+    (non-prime cities currently sitting at tour position k-1 where k%10==0).
+    Couples the destroy operator with the Santa metric structure."""
+    n = candidates.shape[0]
+    n_remove = max(2, int(n * frac))
+    start_city = int(tour[0])
+    weights = np.ones(n, dtype=np.float64)
+    for k in range(10, n + 1, 10):
+        origin = tour[k - 1]
+        if not is_prime[origin]:
+            weights[origin] = bias
+    weights[start_city] = 0.0
+    weights /= weights.sum()
+    rem = rng.choice(n, size=n_remove, replace=False, p=weights).astype(np.int64)
+    removed_set = np.zeros(n, dtype=np.bool_)
+    removed_set[rem] = True
+    rng.shuffle(rem)
+    return _lns_relink(tour, xy, candidates, removed_set, rem)
+
+
 def double_bridge(tour, rng):
     """Martin-Otto-Felten double-bridge 4-opt perturbation. Cuts tour into
     4 segments at 3 random points and reconnects A|C|B|D."""
@@ -492,7 +513,7 @@ def solve(xy, is_prime, budget):
             elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
             else:
-                cand = lns_perturb(cand, rng, xy, candidates, frac=0.010)
+                cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=4.0)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
