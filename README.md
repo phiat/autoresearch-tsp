@@ -83,6 +83,7 @@ perturbation → prime-aware swap polish.
 
 - **Inspiration & template**: [karpathy/autoresearch](https://github.com/karpathy/autoresearch).
 - **Task**: [Kaggle Traveling Santa 2018 Prime Paths](https://www.kaggle.com/competitions/traveling-santa-2018-prime-paths/).
+- **Inspired by this video**: [marimo: autoresearch on the Santa 2018 TSP](https://www.youtube.com/watch?v=bMoNOb0iXpA).
 
 ## License
 

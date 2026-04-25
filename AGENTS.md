@@ -10,6 +10,44 @@
 - **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
   its own git repo. Reference only; do not modify.
 
+## Working alongside a live loop session
+
+There is often a separate Claude Code session running the autonomous
+loop in `tsp_research/` on branch `tsp/<tag>`. It uses the same
+working tree as you. Disrupting its view of git state confuses it.
+
+**Rules when the loop is live:**
+
+- **Do not switch branches** in this working tree. The loop watches
+  `git status` / `git log`, and a branch flip out from under it
+  triggers "I'm somewhere I didn't expect, let me investigate"
+  detours that waste cycles. If you must work on `main`, do it in a
+  worktree (`git worktree add`).
+- **Do not push to `main` mid-cycle.** The loop occasionally merges
+  `main` into its experiment branch; an unfamiliar `main` commit
+  arriving from nowhere reads to the loop as a mystery commit it
+  needs to investigate. If you have to update `main`, prefer batching
+  changes and timing the push between cycles, or pre-announce the
+  commit in the loop's session.
+- **Do not commit on the loop's branch.** The loop reverts via
+  `git reset --hard HEAD~1` for discarded experiments — any commit
+  you slip in on top can be wiped. (It's still in the reflog, but
+  it's noise.) Stage `meta:` tooling changes on `main` and let the
+  loop pick them up via its own merge.
+- **If you must intervene**, send a one-line message in the loop's
+  session explaining what happened (e.g. *"that commit on main is
+  yours — meta: chore, safe to merge or ignore"*). Don't reach into
+  the loop's branch from outside.
+- **Editing files outside `tsp_research/`** is generally safe; the
+  loop only watches git and its own working dir. But edits inside
+  `tsp_research/` can show up in the loop's `git status` and look
+  like uncommitted experiment changes — avoid unless coordinating.
+
+Lesson learned the hard way during the apr25 session: a switch to
+`main` + commit + push, done while the loop was between cycles,
+caused the loop to spend a turn investigating an unfamiliar HEAD on
+its own branch when it next ran `git status`.
+
 ## Issue tracking
 
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
