@@ -20,7 +20,8 @@ from prepare import (
     write_submission,
 )
 
-K_NEIGHBORS = 4
+K_NEIGHBORS = 7  # for 2-opt / Or-opt / prime-swap (broader sweep pool)
+K_TIGHT = 4  # for LNS-prime repair / NN construction (tight, fast)
 
 
 # ---------------------------------------------------------------------------
@@ -464,11 +465,13 @@ def solve(xy, is_prime, budget):
     print("  building cKDTree + candidate list ...")
     t0 = time.perf_counter()
     candidates = build_candidates(xy, K_NEIGHBORS)
-    print(f"  candidates built in {time.perf_counter() - t0:.2f}s")
+    candidates_tight = np.ascontiguousarray(candidates[:, :K_TIGHT])
+    print(f"  candidates built in {time.perf_counter() - t0:.2f}s "
+          f"(K={K_NEIGHBORS} for 2-opt/Or-opt, K={K_TIGHT} for NN/LNS)")
 
     print("  building fast NN tour ...")
     t0 = time.perf_counter()
-    tour, fallbacks = fast_nn(xy, candidates, START_CITY)
+    tour, fallbacks = fast_nn(xy, candidates_tight, START_CITY)
     print(f"  NN done in {time.perf_counter() - t0:.2f}s ({fallbacks} brute fallbacks), remaining {budget.remaining():.1f}s")
 
     if budget.remaining() < 1:
@@ -499,10 +502,10 @@ def solve(xy, is_prime, budget):
     while not budget.expired():
         if no_improve >= RESTART_AFTER:
             seed = int(rng.integers(1, n))
-            cand, _ = fast_nn(xy, candidates, seed)
+            cand, _ = fast_nn(xy, candidates_tight, seed)
             idx = int(np.where(cand == START_CITY)[0][0])
             cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
-            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
+            cand = lns_perturb_prime(cand, rng, xy, candidates_tight, is_prime, frac=0.010, bias=8.0)
             no_improve = 0
             restarts += 1
             print(f"    [iter {iters}] RANDOM RESTART from city {seed} (LNS-prime smoothed)")
@@ -514,7 +517,7 @@ def solve(xy, is_prime, budget):
             elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
             else:
-                cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
+                cand = lns_perturb_prime(cand, rng, xy, candidates_tight, is_prime, frac=0.010, bias=8.0)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
