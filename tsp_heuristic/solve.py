@@ -510,7 +510,7 @@ def solve(xy, is_prime, budget):
             cand = best_tour
             r = rng.random()
             if r < 1.0 / 3.0:
-                cand = double_bridge(cand, rng)
+                cand = double_bridge(double_bridge(cand, rng), rng)
             elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
             else:
