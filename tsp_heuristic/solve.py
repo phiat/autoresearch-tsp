@@ -497,8 +497,7 @@ def solve(xy, is_prime, budget):
     no_improve = 0
     RESTART_AFTER = 40
     while not budget.expired():
-        ra = 20 if budget.remaining() < 60.0 else RESTART_AFTER
-        if no_improve >= ra:
+        if no_improve >= RESTART_AFTER:
             seed = int(rng.integers(1, n))
             cand, _ = fast_nn(xy, candidates, seed)
             idx = int(np.where(cand == START_CITY)[0][0])
