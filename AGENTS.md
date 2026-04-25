@@ -1,5 +1,17 @@
 # Agent Instructions
 
+## Sub-projects
+
+- **`tsp_research/`** — autonomous research loop for the Kaggle Santa
+  2018 TSP. Has its own `AGENTS.md`, `program.md`, and a `.claude/`
+  with skills, subagents, slash commands, and hooks. If you're
+  driving the loop, work from inside `tsp_research/` and read its
+  `AGENTS.md` first.
+- **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
+  its own git repo. Reference only; do not modify.
+
+## Issue tracking
+
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
 ## Quick Reference
