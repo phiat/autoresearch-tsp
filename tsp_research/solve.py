@@ -139,20 +139,25 @@ def build_candidates(xy, k):
     return idx[:, 1:].astype(np.int32)
 
 
-def two_opt(tour, xy, candidates, budget):
-    n = len(xy)
-    pos = np.empty(n, dtype=np.int64)
-    pos[tour[:-1]] = np.arange(n, dtype=np.int64)
-    sweep = 0
-    while not budget.expired():
-        t0 = time.perf_counter()
+def run_2opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
+    """Run 2-opt sweeps until convergence or budget exhausted. Returns sweep count."""
+    sweeps = 0
+    while sweeps < max_sweeps and not budget.expired():
         n_imp = two_opt_sweep(tour, pos, xy, candidates)
-        sweep += 1
-        print(f"  2-opt sweep {sweep}: {n_imp} improvements ({time.perf_counter() - t0:.2f}s, "
-              f"budget remaining {budget.remaining():.1f}s)")
+        sweeps += 1
         if n_imp == 0:
             break
-    return tour
+    return sweeps
+
+
+def double_bridge(tour, rng):
+    """Martin-Otto-Felten double-bridge 4-opt perturbation. Cuts tour into
+    4 segments at 3 random points and reconnects A|C|B|D."""
+    n = len(tour) - 1  # tour[0] == tour[n] == START_CITY
+    cuts = rng.choice(n - 1, size=3, replace=False) + 1
+    cuts.sort()
+    i, j, k = int(cuts[0]), int(cuts[1]), int(cuts[2])
+    return np.concatenate([tour[:i], tour[j:k], tour[i:j], tour[k:]])
 
 
 # ---------------------------------------------------------------------------
@@ -175,9 +180,42 @@ def solve(xy, is_prime, budget):
     if budget.remaining() < 1:
         return tour
 
-    print("  running 2-opt ...")
-    tour = two_opt(tour, xy, candidates, budget)
-    return tour
+    n = len(xy)
+    pos = np.empty(n, dtype=np.int64)
+    pos[tour[:-1]] = np.arange(n, dtype=np.int64)
+
+    print("  running 2-opt to local optimum ...")
+    sweeps = run_2opt(tour, pos, xy, candidates, budget)
+    print(f"  2-opt converged in {sweeps} sweeps, remaining {budget.remaining():.1f}s")
+
+    best_tour = tour.copy()
+    best_cost = score_tour(best_tour, xy, is_prime)
+    print(f"  cost after 2-opt: {best_cost:.2f}")
+
+    if budget.remaining() < 1:
+        return best_tour
+
+    print("  running ILS (double-bridge + 2-opt) ...")
+    rng = np.random.default_rng(0xBEEF)
+    iters = 0
+    accepts = 0
+    while not budget.expired():
+        cand = double_bridge(best_tour, rng)
+        pos[cand[:-1]] = np.arange(n, dtype=np.int64)
+        run_2opt(cand, pos, xy, candidates, budget)
+        if budget.expired():
+            # don't waste a score call on a possibly-incomplete optimisation
+            break
+        new_cost = score_tour(cand, xy, is_prime)
+        iters += 1
+        if new_cost < best_cost:
+            best_cost = new_cost
+            best_tour = cand.copy()
+            accepts += 1
+            print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
+                  f"remaining {budget.remaining():.1f}s")
+    print(f"  ILS done: {iters} iters, {accepts} improvements")
+    return best_tour
 
 
 # ---------------------------------------------------------------------------
