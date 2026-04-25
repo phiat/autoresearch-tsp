@@ -2,13 +2,14 @@
 
 Loads the latest moves/*.npz, derives a 9-d feature vector per move
 from city coords + prime flags, balances positives/negatives, trains a
-2-layer MLP with BCE, and saves the checkpoint plus feature
-mean/std to checkpoints/<tag>.pt.
+2-layer MLP with BCE (default) or MSE-on-gain (LOSS=mse), and saves
+the checkpoint plus feature mean/std to checkpoints/<tag>.pt.
 
 Reports AUC on a held-out unbalanced split, compared against the
 geographic baseline (`score = -d_a_c`, i.e. closer candidates first).
 """
 
+import os
 import time
 from pathlib import Path
 
@@ -17,6 +18,8 @@ import torch
 import torch.nn as nn
 
 from prepare import load_cities
+
+LOSS_MODE = os.environ.get("LOSS", "bce")  # "bce" or "mse"
 
 CHECKPOINTS_DIR = Path(__file__).parent / "checkpoints"
 MOVES_DIR = Path(__file__).parent / "moves"
@@ -96,8 +99,10 @@ def train_and_eval(tag: str = "latest"):
     xy, is_prime = load_cities()
 
     feats, labels = build_features(moves_path, xy, is_prime)
+    d_raw = np.load(moves_path)
+    gain = d_raw["gain"].astype(np.float32)
     n = len(feats)
-    print(f"  rows: {n:,}   accepted: {int(labels.sum()):,} ({100*labels.mean():.3f}%)")
+    print(f"  rows: {n:,}   accepted: {int(labels.sum()):,} ({100*labels.mean():.3f}%)   loss: {LOSS_MODE}")
 
     rng = np.random.default_rng(42)
     pos_idx = np.where(labels == 1)[0]
@@ -125,8 +130,17 @@ def train_and_eval(tag: str = "latest"):
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"  device: {device}")
+    if LOSS_MODE == "mse":
+        gain_mu = float(gain.mean())
+        gain_sd = float(gain.std()) or 1.0
+        targets_full = ((gain - gain_mu) / gain_sd).astype(np.float32)
+    else:
+        gain_mu = 0.0
+        gain_sd = 1.0
+        targets_full = labels.astype(np.float32)
+
     Xtr = torch.from_numpy(norm(feats[train_idx])).to(device)
-    Ytr = torch.from_numpy(labels[train_idx].astype(np.float32)).to(device)
+    Ytr = torch.from_numpy(targets_full[train_idx]).to(device)
     Xval = torch.from_numpy(norm(feats[val_idx])).to(device)
     Yval = labels[val_idx]
     Xtest = torch.from_numpy(norm(feats[test_idx])).to(device)
@@ -141,7 +155,7 @@ def train_and_eval(tag: str = "latest"):
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  model_params: {n_params}")
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
-    loss_fn = nn.BCEWithLogitsLoss()
+    loss_fn = nn.MSELoss() if LOSS_MODE == "mse" else nn.BCEWithLogitsLoss()
 
     batch = 4096
     epochs = 30
@@ -197,6 +211,9 @@ def train_and_eval(tag: str = "latest"):
         "test_auc": test_auc,
         "holdout_auc_model": ho_auc_model,
         "holdout_auc_geo": ho_auc_geo,
+        "loss_mode": LOSS_MODE,
+        "gain_mu": gain_mu,
+        "gain_sd": gain_sd,
     }, ckpt_path)
 
     training_seconds = time.perf_counter() - t0
