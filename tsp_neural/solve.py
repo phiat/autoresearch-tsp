@@ -44,7 +44,7 @@ from prepare import (
 
 import harvest as _harvest
 
-K_NEIGHBORS = 12            # baseline 2-opt and NN seed
+K_NEIGHBORS = 10            # baseline 2-opt and NN seed
 K_NEIGHBORS_HARVEST = 30    # harvest mode logs the wider pool to cover ranker OOD region
 HARVEST = os.environ.get("HARVEST", "0") == "1"
 MODE = os.environ.get("MODE", "solve")
