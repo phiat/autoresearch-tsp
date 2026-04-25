@@ -18,35 +18,25 @@ project. The differentiator here is *learning*.
 
 ## Setup
 
-This loop is designed to **run in parallel with `tsp_heuristic/`** in
-a separate **git worktree** so the two loops don't fight over `HEAD`.
+You commit to `main` (no per-loop branches). The `tsp_heuristic` loop
+also commits to `main`; the `revert` recipe uses `git revert` so the
+two loops don't wipe each other's commits when discarding experiments.
 
-1. **Agree on a run tag**: `neural/<tag>` (e.g. `neural/apr25-b2`).
-   The branch must not already exist.
-2. **Create a worktree** (run this from the *parent* repo root, one
-   time, before starting the loop):
-
-   ```bash
-   git worktree add -b neural/<tag> ../auto-rez-neural main
-   cd ../auto-rez-neural/tsp_neural
-   ```
-
-   This creates a sibling working tree at `../auto-rez-neural/`
-   checked out to a brand-new `neural/<tag>` branch based on `main`.
-   The original working tree (where `tsp_heuristic/` runs on
-   `heuristic/<tag>`) is untouched. Both loops can now run simultaneously.
-3. **Read the in-scope files**:
+1. **Confirm you're on `main`**: `git branch --show-current`. If not,
+   `git checkout main`.
+2. **Read the in-scope files**:
    - `README.md`, `AGENTS.md` — project context + tooling inventory.
    - `prepare.py` — frozen data loader + `score_tour` (same as
      `tsp_heuristic/`). Do not modify.
    - `solve.py` — the file you modify. Baseline = NN + 2-opt with
      k-NN candidates. **No learning yet.**
-4. **Verify env**: `uv sync` (downloads PyTorch — several GB; one-time).
-5. **Smoke test**: `just data` and `just run`. Baseline val_cost should
-   be in the ~1.55-1.6M range (worse than `tsp_heuristic/`'s current
-   best because no Or-opt / no ILS yet — that's intentional).
-6. **Initialize `results.tsv`**: header row only.
-7. **Confirm setup looks good**, then start the loop.
+3. **Verify env**: `uv sync` (downloads PyTorch — several GB;
+   one-time).
+4. **Smoke test**: `just data` and `just run`. Baseline `val_cost`
+   should be in the ~1.55-1.6M range (worse than `tsp_heuristic/`'s
+   current best because no Or-opt / no ILS yet — that's intentional).
+5. **Initialize `results.tsv`** if missing: header row only.
+6. **Confirm setup looks good**, then start the loop.
 
 ## What the agent must do
 
@@ -132,7 +122,7 @@ move features, integrate as candidate ranker").
 
 Same shape as `tsp_heuristic/program.md`:
 
-1. `just status` — branch, head, last result, recap-pending.
+1. `just status` — head commit, last result row, recap-pending. You should always be on `main`.
 2. Pick an idea from `ideas.md` (sampling protocol below).
 3. Edit `solve.py` (and helpers).
 4. `just exp "<desc>"` to commit.

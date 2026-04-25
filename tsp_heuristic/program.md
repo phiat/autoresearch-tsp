@@ -6,23 +6,23 @@ optimisation instead of language modelling.
 
 ## Setup
 
-To set up a new experiment, work with the user to:
+You commit to `main` (no per-loop branches; the `tsp_neural` loop also
+commits to `main`, and the `revert` recipe uses `git revert` so the
+two loops don't wipe each other's commits).
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `apr25`).
-   The branch `heuristic/<tag>` must not already exist — this is a fresh run.
-2. **Create the branch**: `git checkout -b heuristic/<tag>` from current main.
-3. **Read the in-scope files**:
+1. **Confirm you're on `main`**: `git branch --show-current`. If not,
+   `git checkout main`.
+2. **Read the in-scope files**:
    - `README.md` — repo context.
    - `prepare.py` — frozen data loader, `score_tour()` metric, time budget.
      **Do not modify.**
    - `solve.py` — the file you modify. Solver lives here.
-4. **Verify data exists**: `data/cities.csv` should be present (197,769 rows).
+3. **Verify data exists**: `data/cities.csv` should be present (197,769 rows).
    If not, ask the human to unzip the Kaggle archive into `data/`.
-5. **Smoke test**: `uv run prepare.py` — should print N=197769 and a baseline
+4. **Smoke test**: `uv run prepare.py` — should print N=197769 and a baseline
    identity-tour cost without errors.
-6. **Initialize results.tsv**: create with header row only. Baseline goes in
-   after the first real run.
-7. **Confirm and go.**
+5. **Initialize `results.tsv`** if missing: create with header row only.
+6. **Confirm and go.**
 
 ## Experimentation
 
@@ -136,7 +136,7 @@ d4e5f6g	0	0	crash	scipy KDTree call with bad k argument
 
 LOOP FOREVER:
 
-1. Inspect git state — `just status` (branch, head, last result, recap-pending).
+1. Inspect git state — `just status` (head commit, last result row, recap-pending). You should always be on `main`.
 2. Edit `solve.py` with the next experimental idea.
 3. `just exp "<short description>"` (commits with `exp:` prefix).
 4. `just run` (runs `uv run solve.py > run.log 2>&1`, never use `tee` —

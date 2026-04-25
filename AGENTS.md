@@ -3,21 +3,20 @@
 ## Sub-projects
 
 - **`tsp_heuristic/`** — classical heuristic-search loop for the Kaggle
-  Santa 2018 TSP. Runs on a `heuristic/<tag>` branch in this working tree.
-  Has its own `AGENTS.md`, `program.md`, and `.claude/` toolset.
-- **`tsp_neural/`** — neural-guided local search loop on the same
-  task. Designed to run in a **separate git worktree** on a
-  `neural/<tag>` branch so it can run in parallel with
-  `tsp_heuristic/` without `HEAD` conflicts. Has its own
-  `AGENTS.md`, `program.md`, `.claude/` (with an extra `train-policy`
-  skill), and PyTorch in deps.
+  Santa 2018 TSP. Has its own `AGENTS.md`, `program.md`, and `.claude/`
+  toolset.
+- **`tsp_neural/`** — neural-guided local search loop on the same task.
+  Has its own `AGENTS.md`, `program.md`, `.claude/` (with an extra
+  `train-policy` skill), and PyTorch in deps.
 - **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
   its own git repo. Reference only; do not modify.
 
-When both loops are live, **two Claude Code sessions** are running —
-one in this working tree's `tsp_heuristic/`, one in the worktree's
-`tsp_neural/`. They share `.git/` (branches are mutually visible) but
-never share `HEAD`. See the outer `README.md` for worktree setup.
+Both loops commit to **`main`** from this single working tree. The
+file-level isolation comes from their separate subdirs; neither loop's
+`solve.py` collides with the other's. The `revert` recipe in each
+`justfile` uses `git revert HEAD --no-edit` (creates a revert commit
+on top, doesn't rewrite history) so a discard from one loop never
+wipes the other's commits. See the outer `README.md` for setup.
 
 ## Issue tracking
 
@@ -104,24 +103,21 @@ bd close <id>         # Complete work
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
 
-## Running two loops in parallel (worktrees)
+## Running two loops in parallel
 
-When `tsp_heuristic/` and `tsp_neural/` are both live, each runs in its
-own **git worktree** (sibling working directories sharing the same
-`.git/`), so neither flips the other's `HEAD`. Sessions for the two
-loops are completely independent and never see each other's working
-tree.
+`tsp_heuristic/` and `tsp_neural/` both run in this single working
+tree, both on `main`, with two separate Claude Code sessions — one
+in each subdir. There are **no per-loop branches and no worktrees**
+(an earlier iteration tried that; the file-level isolation from the
+subdirs plus the `git revert`–based discard recipe is enough).
 
-The "Working alongside a live loop session" rules above apply
-**per-worktree**. Additionally:
+Coordination rules:
 
-- Don't reach across worktrees with `git checkout` or branch ops.
-- `meta:` commits affect both loops; batch them, land on `main`, let
-  each loop's agent merge `main` into its branch on its own schedule.
-- `compare-runs` across worktrees works (branches mutually visible)
-  but the data files (`results.tsv`, `moves/`, `checkpoints/`) are
-  per-worktree-local — bring artefacts to one place if you want a
-  joint analysis.
-
-See the outer `README.md` "Running both loops in parallel" section for
-the worktree setup commands.
+- Both loops are on `main`. Don't `git checkout` to anything else
+  from either session.
+- `meta:` commits go on `main` and both agents see them in `git log`
+  immediately (no merge step needed since neither is on a branch).
+- `compare-runs` across the two paradigms works trivially — both
+  trees are visible from a single `git log`. The data files
+  (`results.tsv`, `moves/`, `checkpoints/`) are per-subdir-local;
+  bring artefacts together if you want a joint analysis.

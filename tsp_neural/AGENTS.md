@@ -4,25 +4,24 @@ Tooling index for the neural-guided local search loop. For operating
 rules, see `program.md`. For the neural-vs-classical contrast, see
 `README.md`.
 
-## You are running in a worktree
+## You share `main` with the `tsp_heuristic` loop
 
-This loop runs in a sibling **git worktree** (typically at
-`../auto-rez-neural/`) so a parallel `tsp_heuristic/` loop on a
-different branch can run concurrently without `HEAD` conflicts.
+Both loops commit to `main` from the same working tree (the natural
+file-level isolation comes from the separate `tsp_heuristic/` and
+`tsp_neural/` subdirs — neither loop touches the other's `solve.py`).
 
 Implications:
 
-- Your branch is `neural/<tag>`. Don't switch off it.
-- The other loop's branch (`heuristic/<tag>`) is visible via `git branch -a`
-  but not checked out here. Do not `git checkout` it.
-- The repo's `.git/` is shared across worktrees. Your commits are
-  visible to the other worktree as branch refs, but its working
-  tree is never touched by yours, and vice versa.
-- `git worktree list` shows the active worktrees and their HEADs —
-  useful sanity check.
-- If you ever see `HEAD` on a different branch than `neural/<tag>`,
-  stop and investigate. Something external changed your worktree's
-  state; it is not safe to continue blindly.
+- You're on `main`. Don't switch off it. No per-loop branches.
+- The other loop's commits will appear interleaved with yours in
+  `git log`. That's fine — they touch different paths.
+- `just revert` uses `git revert HEAD --no-edit` (creates a revert
+  commit on top, doesn't rewrite history). This is what makes the
+  shared-branch setup safe — your discards won't wipe the other
+  loop's commits.
+- If you see `HEAD` on a branch other than `main`, stop and
+  investigate. Something external changed state; not safe to
+  continue blindly.
 
 ## Quick orientation
 
