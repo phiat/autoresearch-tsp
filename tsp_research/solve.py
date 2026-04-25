@@ -20,7 +20,7 @@ from prepare import (
     write_submission,
 )
 
-K_NEIGHBORS = 7
+K_NEIGHBORS = 5
 
 
 # ---------------------------------------------------------------------------
