@@ -27,7 +27,7 @@ K_NEIGHBORS = 4
 # Parallel ILS knobs (env-overridable so agents can revert to single-thread).
 # WORKERS=1 → sequential ILS (legacy path).
 # WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
-ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 4))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
 
@@ -603,9 +603,11 @@ def parallel_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
                 break
 
             args_list = []
-            for _ in range(workers):
+            # Force per-worker perturbation diversity: round-robin assignment
+            # across {DB, SS, LNS-prime} guarantees within-batch variety.
+            for w in range(workers):
                 worker_seed = int(rng.integers(0, 2**31 - 1))
-                perturb_kind = int(rng.integers(0, 3))
+                perturb_kind = w % 3
                 args_list.append((
                     best_tour, worker_seed, perturb_kind,
                     xy, candidates, is_prime, worker_budget_sec,
