@@ -1,8 +1,10 @@
 """
 Santa 2018 TSP solver — the agent's playground.
 
-Current experiment: L5 — numba-jit'd 2-opt with k=10 cKDTree candidate list,
-seeded by nearest-neighbor from city 0.
+Current experiment: LNS — destroy-repair perturbation (4% remove + cheapest
+insert via candidate list) added to the ILS perturb pool alongside double-bridge
+and segment-shift (1/3 each). k=4 cKDTree candidate list. Targets the deep-basin
+plateau where double-bridge + segment-shift fail to escape (P4 restart never fires).
 """
 
 import time
@@ -332,6 +334,84 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
     return total_2opt, total_or
 
 
+@njit(cache=True, fastmath=True)
+def _lns_relink(tour, xy, candidates, removed_set, removed_order):
+    """Destroy-repair perturbation. Excises cities flagged in removed_set from
+    the tour cycle, then reinserts each city in removed_order at its cheapest
+    candidate-list position via doubly-linked-list splicing. Returns a new
+    (n+1,) tour with the same cycle closure (tour[0] == tour[-1])."""
+    n = candidates.shape[0]
+    K = candidates.shape[1]
+    nxt = np.empty(n, dtype=np.int64)
+    prv = np.empty(n, dtype=np.int64)
+    in_tour = np.empty(n, dtype=np.bool_)
+    for i in range(n):
+        a = tour[i]
+        b = tour[i + 1]
+        nxt[a] = b
+        prv[b] = a
+    for c in range(n):
+        in_tour[c] = not removed_set[c]
+    for c in range(n):
+        if removed_set[c]:
+            p = prv[c]
+            x = nxt[c]
+            nxt[p] = x
+            prv[x] = p
+    R = removed_order.shape[0]
+    start = tour[0]
+    for idx in range(R):
+        c = removed_order[idx]
+        best_cost = 1e30
+        best_u = -1
+        for kk in range(K):
+            u = candidates[c, kk]
+            if not in_tour[u]:
+                continue
+            v = nxt[u]
+            d_uc = _euclid(xy, u, c)
+            d_cv = _euclid(xy, c, v)
+            d_uv = _euclid(xy, u, v)
+            cost = d_uc + d_cv - d_uv
+            if cost < best_cost:
+                best_cost = cost
+                best_u = u
+        if best_u < 0:
+            best_u = start  # START_CITY is never removed
+        u = best_u
+        v = nxt[u]
+        nxt[u] = c
+        prv[c] = u
+        nxt[c] = v
+        prv[v] = c
+        in_tour[c] = True
+    out = np.empty(n + 1, dtype=tour.dtype)
+    out[0] = start
+    out[n] = start
+    cur = start
+    for i in range(1, n):
+        cur = nxt[cur]
+        out[i] = cur
+    return out
+
+
+def lns_perturb(tour, rng, xy, candidates, frac=0.04):
+    """Destroy-and-repair LNS perturbation. Removes a random ~frac of cities
+    (excluding START_CITY) and reinserts them in random order via cheapest
+    insertion against the candidate list."""
+    n = candidates.shape[0]
+    n_remove = max(2, int(n * frac))
+    start_city = int(tour[0])
+    mask = np.ones(n, dtype=np.bool_)
+    mask[start_city] = False
+    pool = np.flatnonzero(mask)
+    rem = rng.choice(pool, size=n_remove, replace=False).astype(np.int64)
+    removed_set = np.zeros(n, dtype=np.bool_)
+    removed_set[rem] = True
+    rng.shuffle(rem)
+    return _lns_relink(tour, xy, candidates, removed_set, rem)
+
+
 def double_bridge(tour, rng):
     """Martin-Otto-Felten double-bridge 4-opt perturbation. Cuts tour into
     4 segments at 3 random points and reconnects A|C|B|D."""
@@ -408,10 +488,13 @@ def solve(xy, is_prime, budget):
             print(f"    [iter {iters}] RANDOM RESTART from city {seed}")
         else:
             cand = best_tour
-            if rng.random() < 0.5:
+            r = rng.random()
+            if r < 1.0 / 3.0:
                 cand = double_bridge(cand, rng)
-            else:
+            elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
+            else:
+                cand = lns_perturb(cand, rng, xy, candidates, frac=0.04)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
