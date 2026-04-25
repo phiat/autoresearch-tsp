@@ -29,18 +29,35 @@ FEATURE_NAMES = [
 N_FEATURES = len(FEATURE_NAMES)
 
 
-def latest_moves_path() -> Path:
+def all_moves_paths() -> list[Path]:
     paths = sorted(MOVES_DIR.glob("*.npz"), key=lambda p: p.stat().st_mtime)
     if not paths:
         raise FileNotFoundError("no moves/*.npz found — run `just harvest` first")
-    return paths[-1]
+    return paths
 
 
-def build_features(npz_path: Path, xy: np.ndarray, is_prime: np.ndarray):
-    d = np.load(npz_path)
-    a, an, c, cn = d["a"], d["a_next"], d["c"], d["c_next"]
-    pd = np.abs(d["pos_delta"]).astype(np.float32)
-    accepted = d["accepted"].astype(np.uint8)
+def latest_moves_path() -> Path:
+    return all_moves_paths()[-1]
+
+
+def build_features(npz_paths, xy: np.ndarray, is_prime: np.ndarray):
+    if not isinstance(npz_paths, (list, tuple)):
+        npz_paths = [npz_paths]
+    arrs_a, arrs_an, arrs_c, arrs_cn, arrs_pd, arrs_acc = [], [], [], [], [], []
+    for p in npz_paths:
+        d = np.load(p)
+        arrs_a.append(d["a"])
+        arrs_an.append(d["a_next"])
+        arrs_c.append(d["c"])
+        arrs_cn.append(d["c_next"])
+        arrs_pd.append(np.abs(d["pos_delta"]).astype(np.float32))
+        arrs_acc.append(d["accepted"].astype(np.uint8))
+    a = np.concatenate(arrs_a)
+    an = np.concatenate(arrs_an)
+    c = np.concatenate(arrs_c)
+    cn = np.concatenate(arrs_cn)
+    pd = np.concatenate(arrs_pd)
+    accepted = np.concatenate(arrs_acc)
 
     def edge_len(u, v):
         dx = xy[u, 0] - xy[v, 0]
@@ -91,11 +108,11 @@ def auc_numpy(scores: np.ndarray, labels: np.ndarray) -> float:
 
 def train_and_eval(tag: str = "latest"):
     t0 = time.perf_counter()
-    moves_path = latest_moves_path()
-    print(f"loading moves from {moves_path.name}")
+    moves_paths = all_moves_paths()
+    print(f"loading moves from {len(moves_paths)} npz file(s): {[p.name for p in moves_paths]}")
     xy, is_prime = load_cities()
 
-    feats, labels = build_features(moves_path, xy, is_prime)
+    feats, labels = build_features(moves_paths, xy, is_prime)
     n = len(feats)
     print(f"  rows: {n:,}   accepted: {int(labels.sum()):,} ({100*labels.mean():.3f}%)")
 
