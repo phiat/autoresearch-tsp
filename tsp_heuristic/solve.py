@@ -78,10 +78,7 @@ def _euclid(xy, a, b):
 
 @njit(cache=True, fastmath=True)
 def two_opt_sweep(tour, pos, xy, candidates, edge_penalty, lam):
-    """One best-improvement pass with GLS augmented gain. The augmented gain
-    is euclidean_gain + lam * (removed_penalty - added_penalty), where the
-    penalty for tour edges (a, a_next) and (c, c_next) is looked up by linear
-    scan in candidates[a] / candidates[c] (K=4, cheap)."""
+    """One best-improvement pass with GLS augmented gain (lam * penalty[a, kk])."""
     n = len(xy)
     K = candidates.shape[1]
     n_improvements = 0
@@ -89,12 +86,6 @@ def two_opt_sweep(tour, pos, xy, candidates, edge_penalty, lam):
         a = tour[ai]
         a_next = tour[ai + 1]
         d_a_anext = _euclid(xy, a, a_next)
-        # Penalty for tour edge (a, a_next) — scan candidates[a] for a_next
-        pen_a_anext = 0.0
-        for kk2 in range(K):
-            if candidates[a, kk2] == a_next:
-                pen_a_anext = edge_penalty[a, kk2]
-                break
         best_gain = 1e-12
         best_kk = -1
         best_case = 0  # 1 = case A (cj > ai+1), 2 = case B (cj < ai-1)
@@ -108,13 +99,7 @@ def two_opt_sweep(tour, pos, xy, candidates, edge_penalty, lam):
                 d_a_c = _euclid(xy, a, c)
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
-                pen_c_cnext = 0.0
-                for kk2 in range(K):
-                    if candidates[c, kk2] == c_next:
-                        pen_c_cnext = edge_penalty[c, kk2]
-                        break
-                gain = (d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
-                        + lam * (pen_a_anext + pen_c_cnext - edge_penalty[a, kk]))
+                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext - lam * edge_penalty[a, kk]
                 if gain > best_gain:
                     best_gain = gain
                     best_kk = kk
@@ -124,13 +109,7 @@ def two_opt_sweep(tour, pos, xy, candidates, edge_penalty, lam):
                 d_a_c = _euclid(xy, a, c)
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
-                pen_c_cnext = 0.0
-                for kk2 in range(K):
-                    if candidates[c, kk2] == c_next:
-                        pen_c_cnext = edge_penalty[c, kk2]
-                        break
-                gain = (d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
-                        + lam * (pen_a_anext + pen_c_cnext - edge_penalty[a, kk]))
+                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext - lam * edge_penalty[a, kk]
                 if gain > best_gain:
                     best_gain = gain
                     best_kk = kk
