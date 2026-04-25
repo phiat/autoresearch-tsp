@@ -423,7 +423,7 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                 if not used[kk] and valid[kk] and scores[kk] > best_score:
                     best_kk = kk
                     best_score = scores[kk]
-            if best_kk < 0:
+            if best_kk < 0 or best_score < 0.0:
                 break
             used[best_kk] = True
 
