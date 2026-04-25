@@ -496,7 +496,11 @@ def solve(xy, is_prime, budget):
     restarts = 0
     no_improve = 0
     RESTART_AFTER = 40
+    arm_imps = np.zeros(3, dtype=np.float64)
+    arm_calls = np.ones(3, dtype=np.float64)
+    TAU = 0.5
     while not budget.expired():
+        arm = -1
         if no_improve >= RESTART_AFTER:
             seed = int(rng.integers(1, n))
             cand, _ = fast_nn(xy, candidates, seed)
@@ -508,13 +512,19 @@ def solve(xy, is_prime, budget):
             print(f"    [iter {iters}] RANDOM RESTART from city {seed} (LNS-prime smoothed)")
         else:
             cand = best_tour
-            r = rng.random()
-            if r < 1.0 / 3.0:
+            ratios = arm_imps / arm_calls
+            scaled = ratios / TAU
+            scaled = scaled - scaled.max()
+            weights = np.exp(scaled)
+            weights = weights / weights.sum()
+            arm = int(rng.choice(3, p=weights))
+            if arm == 0:
                 cand = double_bridge(cand, rng)
-            elif r < 2.0 / 3.0:
+            elif arm == 1:
                 cand = segment_shift(cand, rng)
             else:
                 cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
+            arm_calls[arm] += 1
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
@@ -526,11 +536,14 @@ def solve(xy, is_prime, budget):
             best_tour = cand.copy()
             accepts += 1
             no_improve = 0
+            if arm >= 0:
+                arm_imps[arm] += 1
             print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
                   f"remaining {budget.remaining():.1f}s")
         else:
             no_improve += 1
     print(f"  ILS done: {iters} iters, {accepts} improvements, {restarts} restarts")
+    print(f"  arm stats: DB {int(arm_imps[0])}/{int(arm_calls[0])}, SS {int(arm_imps[1])}/{int(arm_calls[1])}, LNS {int(arm_imps[2])}/{int(arm_calls[2])}")
 
     print("  running prime-swap post-pass ...")
     pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
