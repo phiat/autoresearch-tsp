@@ -109,3 +109,24 @@ gains, ILS yields modest tail improvements.
 - Z4. **Prime post-pass**: scan steps k where k%10==0 and origin non-prime;
       try cheap local swaps (single swap with a nearby prime, or position
       shift by 1) to flip origin to prime, accept if net cost drops.
+
+## Appended (cycle 3)
+
+Observations through row 16: P4 random-NN-restart-on-stuck is the most recent
+big win (−455). The escape mechanism demonstrably finds new basins. Or-opt with
+reversed-segment insertion (O4r) and L=4,5 extension both worked. Z1-integrated
+in inner loop FAILED — taxing inner loop more than its gain. Pattern: cheap
+escapes good, expensive inner-loop additions bad.
+
+- P4t. **P4-tighten**: drop RESTART_AFTER from 40 → 20 idle iters. P4 proved
+       the mechanism; a lower threshold should surface more basin escapes
+       within budget.
+- O4r45. **Or-opt L=4,5 reversed**: extend reversed-segment insertion (O4r,
+       currently L=2,3) to L=4,5. Two independent wins (O4r and length extension)
+       are obvious to combine.
+- Z2e. **Z2-efficient**: penalty-aware 2-opt with modulo-10 position tracking.
+       Track which moves cross a position k%10==0 boundary and apply the real
+       penalty delta only there; pure-euclidean elsewhere. Cheap if scoped.
+- LNS. **LNS cheapest-insert repair**: remove ~4% of cities at random, repair
+       by cheapest-insertion. More structural than restart; targets the
+       flat-ridge diagnosis by destroying tour structure rather than re-seeding.
