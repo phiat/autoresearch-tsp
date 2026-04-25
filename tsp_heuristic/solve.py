@@ -5,7 +5,9 @@ Current experiment: L5 — numba-jit'd 2-opt with k=10 cKDTree candidate list,
 seeded by nearest-neighbor from city 0.
 """
 
+import os
 import time
+import multiprocessing as mp
 import numpy as np
 from scipy.spatial import cKDTree
 from numba import njit
@@ -21,6 +23,12 @@ from prepare import (
 )
 
 K_NEIGHBORS = 4
+
+# Parallel ILS knobs (env-overridable so agents can revert to single-thread).
+# WORKERS=1 → sequential ILS (legacy path).
+# WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
+ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +465,92 @@ def segment_shift(tour, rng):
 
 
 # ---------------------------------------------------------------------------
+# Parallel ILS — multiprocessing fork pool dispatching K perturb-and-improve
+# workers per batch. Each worker takes the current best tour, applies one
+# perturbation (DB / SS / LNS-prime, picked by per-worker rng), runs local
+# search to a fixed per-worker time cap, scores, returns. Parent picks the
+# batch's best and updates the shared best if it improves.
+# ---------------------------------------------------------------------------
+
+def _ils_worker(args):
+    """Top-level (must be picklable) worker for multiprocessing.Pool. Runs one
+    ILS iteration: perturb seed_tour, run local search up to worker_budget_sec,
+    score, return (val_cost, tour). Uses inherited fork memory for xy /
+    candidates / is_prime — no per-call IPC overhead beyond the seed tour."""
+    (seed_tour, rng_seed, perturb_kind, xy, candidates, is_prime,
+     worker_budget_sec) = args
+    rng = np.random.default_rng(rng_seed)
+
+    if perturb_kind == 0:
+        cand = double_bridge(seed_tour, rng)
+    elif perturb_kind == 1:
+        cand = segment_shift(seed_tour, rng)
+    else:
+        cand = lns_perturb_prime(
+            seed_tour, rng, xy, candidates, is_prime,
+            frac=0.010, bias=8.0,
+        )
+
+    n = xy.shape[0]
+    pos = np.empty(n, dtype=np.int64)
+    pos[cand[:-1]] = np.arange(n, dtype=np.int64)
+
+    local_budget = TimeBudget(worker_budget_sec)
+    run_local(cand, pos, xy, candidates, local_budget)
+
+    val = score_tour(cand, xy, is_prime)
+    return val, cand
+
+
+def parallel_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
+                      workers, worker_budget_sec):
+    """Batched parallel ILS. Dispatches `workers` perturb+local-search jobs per
+    batch, blocks for the slowest, accepts the batch's best if it improves the
+    shared best, repeats until the wall-clock budget is exhausted."""
+    print(f"  running PARALLEL ILS "
+          f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s) ...")
+
+    rng = np.random.default_rng(0xCAFE)
+    ctx = mp.get_context("fork")
+
+    batch_num = 0
+    total_iters = 0
+    accepts = 0
+    # One pool reused across batches → no per-batch fork cost beyond initial spawn.
+    with ctx.Pool(processes=workers) as pool:
+        while not budget.expired():
+            # Don't dispatch a batch if there isn't time for it to finish.
+            if budget.remaining() < worker_budget_sec + 2.0:
+                break
+
+            args_list = []
+            for _ in range(workers):
+                worker_seed = int(rng.integers(0, 2**31 - 1))
+                perturb_kind = int(rng.integers(0, 3))
+                args_list.append((
+                    best_tour, worker_seed, perturb_kind,
+                    xy, candidates, is_prime, worker_budget_sec,
+                ))
+
+            results = pool.map(_ils_worker, args_list)
+            batch_num += 1
+            total_iters += len(results)
+
+            cand_cost, cand_tour = min(results, key=lambda r: r[0])
+            if cand_cost < best_cost:
+                best_cost = cand_cost
+                best_tour = cand_tour
+                accepts += 1
+                print(f"    batch {batch_num} (best of {workers}): "
+                      f"NEW BEST {best_cost:.2f}, "
+                      f"remaining {budget.remaining():.1f}s")
+
+    print(f"  ILS done: {batch_num} batches × {workers} workers = "
+          f"{total_iters} iters, {accepts} accepted batches")
+    return best_tour, best_cost
+
+
+# ---------------------------------------------------------------------------
 # Solver entry point
 # ---------------------------------------------------------------------------
 
@@ -489,48 +583,54 @@ def solve(xy, is_prime, budget):
     if budget.remaining() < 1:
         return best_tour
 
-    print("  running ILS (perturb + local-search, random NN restart on stuck) ...")
-    rng = np.random.default_rng(0xCAFE)
-    iters = 0
-    accepts = 0
-    restarts = 0
-    no_improve = 0
-    RESTART_AFTER = 40
-    while not budget.expired():
-        if no_improve >= RESTART_AFTER:
-            seed = int(rng.integers(1, n))
-            cand, _ = fast_nn(xy, candidates, seed)
-            idx = int(np.where(cand == START_CITY)[0][0])
-            cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
-            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
-            no_improve = 0
-            restarts += 1
-            print(f"    [iter {iters}] RANDOM RESTART from city {seed} (LNS-prime smoothed)")
-        else:
-            cand = best_tour
-            r = rng.random()
-            if r < 1.0 / 3.0:
-                cand = double_bridge(cand, rng)
-            elif r < 2.0 / 3.0:
-                cand = segment_shift(cand, rng)
-            else:
+    if ILS_WORKERS > 1:
+        best_tour, best_cost = parallel_ils_loop(
+            best_tour, best_cost, xy, candidates, is_prime, budget,
+            workers=ILS_WORKERS, worker_budget_sec=ILS_WORKER_BUDGET,
+        )
+    else:
+        print("  running ILS (perturb + local-search, random NN restart on stuck) ...")
+        rng = np.random.default_rng(0xCAFE)
+        iters = 0
+        accepts = 0
+        restarts = 0
+        no_improve = 0
+        RESTART_AFTER = 40
+        while not budget.expired():
+            if no_improve >= RESTART_AFTER:
+                seed = int(rng.integers(1, n))
+                cand, _ = fast_nn(xy, candidates, seed)
+                idx = int(np.where(cand == START_CITY)[0][0])
+                cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
                 cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
-        pos[cand[:-1]] = np.arange(n, dtype=np.int64)
-        run_local(cand, pos, xy, candidates, budget)
-        if budget.expired():
-            break
-        new_cost = score_tour(cand, xy, is_prime)
-        iters += 1
-        if new_cost < best_cost:
-            best_cost = new_cost
-            best_tour = cand.copy()
-            accepts += 1
-            no_improve = 0
-            print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
-                  f"remaining {budget.remaining():.1f}s")
-        else:
-            no_improve += 1
-    print(f"  ILS done: {iters} iters, {accepts} improvements, {restarts} restarts")
+                no_improve = 0
+                restarts += 1
+                print(f"    [iter {iters}] RANDOM RESTART from city {seed} (LNS-prime smoothed)")
+            else:
+                cand = best_tour
+                r = rng.random()
+                if r < 1.0 / 3.0:
+                    cand = double_bridge(cand, rng)
+                elif r < 2.0 / 3.0:
+                    cand = segment_shift(cand, rng)
+                else:
+                    cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
+            pos[cand[:-1]] = np.arange(n, dtype=np.int64)
+            run_local(cand, pos, xy, candidates, budget)
+            if budget.expired():
+                break
+            new_cost = score_tour(cand, xy, is_prime)
+            iters += 1
+            if new_cost < best_cost:
+                best_cost = new_cost
+                best_tour = cand.copy()
+                accepts += 1
+                no_improve = 0
+                print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
+                      f"remaining {budget.remaining():.1f}s")
+            else:
+                no_improve += 1
+        print(f"  ILS done: {iters} iters, {accepts} improvements, {restarts} restarts")
 
     print("  running prime-swap post-pass ...")
     pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
