@@ -425,9 +425,12 @@ def lns_perturb(tour, rng, xy, candidates, frac=0.015):
 
 
 def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0):
-    """LNS variant that biases the destroy-set toward penalty-origin cities
-    (non-prime cities currently sitting at tour position k-1 where k%10==0).
-    Couples the destroy operator with the Santa metric structure."""
+    """X11: GLS-penalty-biased LNS destroy. Biases the destroy-set toward BOTH
+    endpoints of every penalty-incurring edge — origin tour[k-1] (a non-prime
+    city at a k%10==0 position) AND its successor tour[k]. The previous
+    behaviour (origin-only weighting) only attacked half of each penalty edge;
+    biasing both endpoints couples the destroy operator more tightly with the
+    structural seam the penalty creates."""
     n = candidates.shape[0]
     n_remove = max(2, int(n * frac))
     start_city = int(tour[0])
@@ -436,6 +439,8 @@ def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0)
         origin = tour[k - 1]
         if not is_prime[origin]:
             weights[origin] = bias
+            dest = tour[k]
+            weights[dest] = bias
     weights[start_city] = 0.0
     weights /= weights.sum()
     rem = rng.choice(n, size=n_remove, replace=False, p=weights).astype(np.int64)
