@@ -223,10 +223,12 @@ def run_or_opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
 
 
 @njit(cache=True, fastmath=True)
-def two_opt_sweep_harvest(tour, pos, xy, candidates,
+def two_opt_sweep_harvest(tour, pos, xy, is_prime_f32, candidates,
                           buf_a, buf_a_next, buf_c, buf_c_next,
                           buf_pos_delta, buf_gain, buf_accepted, count_arr):
-    """Same as two_opt_sweep but logs every scored candidate."""
+    """Same as two_opt_sweep but uses PRIME-AWARE boundary gain for both the
+    accept decision and the logged label, so the harvested (features, gain,
+    accepted) align with what `score_tour` actually rewards."""
     n = len(xy)
     K = candidates.shape[1]
     cap = buf_a.shape[0]
@@ -242,8 +244,17 @@ def two_opt_sweep_harvest(tour, pos, xy, candidates,
             cj = pos[c]
             if cj > ai + 1 and cj < n:
                 c_next = tour[cj + 1]
-                gain = d_a_anext + _euclid(xy, c, c_next) \
-                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+                d_c_cnext = _euclid(xy, c, c_next)
+                d_a_c = _euclid(xy, a, c)
+                d_anext_cnext = _euclid(xy, a_next, c_next)
+                if (ai + 1) % 10 == 0 or (cj + 1) % 10 == 0:
+                    pf_ai = _prime_factor(ai + 1, is_prime_f32[a])
+                    pf_cj_old = _prime_factor(cj + 1, is_prime_f32[c])
+                    pf_cj_new = _prime_factor(cj + 1, is_prime_f32[a_next])
+                    gain = pf_ai * d_a_anext + pf_cj_old * d_c_cnext \
+                           - pf_ai * d_a_c - pf_cj_new * d_anext_cnext
+                else:
+                    gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
                 idx = count_arr[0]
                 if idx < cap:
                     buf_a[idx] = a
@@ -267,8 +278,17 @@ def two_opt_sweep_harvest(tour, pos, xy, candidates,
                     d_a_anext = _euclid(xy, a, a_next)
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
-                gain = d_a_anext + _euclid(xy, c, c_next) \
-                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+                d_c_cnext = _euclid(xy, c, c_next)
+                d_a_c = _euclid(xy, a, c)
+                d_anext_cnext = _euclid(xy, a_next, c_next)
+                if (ai + 1) % 10 == 0 or (cj + 1) % 10 == 0:
+                    pf_cj = _prime_factor(cj + 1, is_prime_f32[c])
+                    pf_ai_old = _prime_factor(ai + 1, is_prime_f32[a])
+                    pf_ai_new = _prime_factor(ai + 1, is_prime_f32[c_next])
+                    gain = pf_ai_old * d_a_anext + pf_cj * d_c_cnext \
+                           - pf_cj * d_a_c - pf_ai_new * d_anext_cnext
+                else:
+                    gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
                 idx = count_arr[0]
                 if idx < cap:
                     buf_a[idx] = a
@@ -489,11 +509,11 @@ def load_latest_checkpoint():
     return ckpt_path, (W1, b1, W2, b2, w3, b3_scalar, mu, sd_)
 
 
-def run_2opt_harvest(tour, pos, xy, candidates, budget, bufs, max_sweeps=10_000):
+def run_2opt_harvest(tour, pos, xy, is_prime_f32, candidates, budget, bufs, max_sweeps=10_000):
     sweeps = 0
     while sweeps < max_sweeps and not budget.expired():
         n_imp = two_opt_sweep_harvest(
-            tour, pos, xy, candidates,
+            tour, pos, xy, is_prime_f32, candidates,
             bufs["a"], bufs["a_next"], bufs["c"], bufs["c_next"],
             bufs["pos_delta"], bufs["gain"], bufs["accepted"], bufs["count"],
         )
@@ -544,8 +564,9 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
     restarts = 0
     if harvest_bufs is not None:
         candidates_h = candidates_full[:, :K_NEIGHBORS_HARVEST]
-        print(f"  running 2-opt (HARVEST=1, K={K_NEIGHBORS_HARVEST}, logging candidates) ...")
-        sweeps = run_2opt_harvest(tour, pos, xy, candidates_h, budget, harvest_bufs)
+        is_prime_f32 = is_prime.astype(np.float32)
+        print(f"  running 2-opt (HARVEST=1, K={K_NEIGHBORS_HARVEST}, prime-aware labels) ...")
+        sweeps = run_2opt_harvest(tour, pos, xy, is_prime_f32, candidates_h, budget, harvest_bufs)
         print(f"  2-opt converged in {sweeps} sweeps, remaining {budget.remaining():.1f}s")
         return tour, inference_calls, restarts
     elif ranked_weights is not None:
