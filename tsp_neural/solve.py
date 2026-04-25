@@ -157,6 +157,72 @@ def run_2opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
 
 
 @njit(cache=True, fastmath=True)
+def or_opt_sweep(tour, pos, xy, candidates):
+    """Or-opt single-city relocation sweep. For each city x, try inserting it
+    before each of its k-NN candidates; accept first improvement.
+
+    Edges removed: (prev,x), (x,next), (c_prev,c)
+    Edges added:   (prev,next), (c_prev,x), (x,c)
+    Gain = sum(removed) - sum(added).
+
+    Returns number of accepted moves."""
+    n = len(xy)
+    K = candidates.shape[1]
+    n_imp = 0
+    for xi in range(1, n):
+        x = tour[xi]
+        prev = tour[xi - 1]
+        nxt = tour[xi + 1]
+        d_prev_x = _euclid(xy, prev, x)
+        d_x_next = _euclid(xy, x, nxt)
+        d_prev_next = _euclid(xy, prev, nxt)
+        rem_gain = d_prev_x + d_x_next - d_prev_next
+        if rem_gain <= 1e-12:
+            continue
+        for kk in range(K):
+            c = candidates[x, kk]
+            if c == 0 or c == prev or c == nxt:
+                continue
+            cj = pos[c]
+            if cj == 0 or cj == xi:
+                continue
+            c_prev = tour[cj - 1]
+            if c_prev == x:
+                continue
+            d_cprev_c = _euclid(xy, c_prev, c)
+            d_cprev_x = _euclid(xy, c_prev, x)
+            d_x_c = _euclid(xy, x, c)
+            ins_gain = d_cprev_c - d_cprev_x - d_x_c
+            total = rem_gain + ins_gain
+            if total > 1e-12:
+                if xi < cj:
+                    for i in range(xi, cj - 1):
+                        tour[i] = tour[i + 1]
+                        pos[tour[i]] = i
+                    tour[cj - 1] = x
+                    pos[x] = cj - 1
+                else:
+                    for i in range(xi, cj, -1):
+                        tour[i] = tour[i - 1]
+                        pos[tour[i]] = i
+                    tour[cj] = x
+                    pos[x] = cj
+                n_imp += 1
+                break
+    return n_imp
+
+
+def run_or_opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
+    sweeps = 0
+    while sweeps < max_sweeps and not budget.expired():
+        n_imp = or_opt_sweep(tour, pos, xy, candidates)
+        sweeps += 1
+        if n_imp == 0:
+            break
+    return sweeps
+
+
+@njit(cache=True, fastmath=True)
 def two_opt_sweep_harvest(tour, pos, xy, candidates,
                           buf_a, buf_a_next, buf_c, buf_c_next,
                           buf_pos_delta, buf_gain, buf_accepted, count_arr):
@@ -458,34 +524,50 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         return tour, inference_calls, restarts
     elif ranked_weights is not None:
         is_prime_f32 = is_prime.astype(np.float32)
-        print("  running 2-opt (RANK, I5 + multi-start double-bridge ILS) ...")
+        print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
-        sweeps, n_inf = run_2opt_ranked(
-            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
-        )
-        inference_calls += n_inf
+        def vnd(t, p):
+            """Variable neighborhood descent: alternate learned 2-opt and
+            classical Or-opt until both find no improvement."""
+            total_2opt_sweeps = 0
+            total_or_sweeps = 0
+            total_inf = 0
+            outer = 0
+            while not budget.expired():
+                outer += 1
+                s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
+                total_2opt_sweeps += s2
+                total_inf += ninf
+                if budget.expired():
+                    break
+                so = run_or_opt(t, p, xy, candidates, budget)
+                total_or_sweeps += so
+                if so <= 1 and outer > 1:
+                    break  # 2-opt also converged on prev iter; both done
+            return total_2opt_sweeps, total_or_sweeps, total_inf
+
+        s2, sor, ninf = vnd(tour, pos)
+        inference_calls += ninf
         best_tour = tour.copy()
         best_cost = score_tour(best_tour, xy, is_prime)
-        print(f"  initial converge: {sweeps} sweeps, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
+        print(f"  initial converge: 2opt={s2}sw, or-opt={sor}sw, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
 
         rng = np.random.default_rng(0)
         while not budget.expired():
-            new_tour = double_bridge(best_tour, rng)
+            new_tour = best_tour.copy()
+            new_tour = double_bridge(new_tour, rng)
             new_pos = np.empty(n, dtype=np.int64)
             new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
-            sweeps_r, n_inf_r = run_2opt_ranked(
-                new_tour, new_pos, xy, is_prime_f32, candidates,
-                ranked_weights, budget,
-            )
-            inference_calls += n_inf_r
+            s2, sor, ninf = vnd(new_tour, new_pos)
+            inference_calls += ninf
             restarts += 1
             new_cost = score_tour(new_tour, xy, is_prime)
             if new_cost < best_cost:
-                print(f"    restart {restarts}: {sweeps_r} sweeps, val_cost={new_cost:.2f} ↓ (improved by {best_cost - new_cost:.2f})")
+                print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f} ↓ ({best_cost - new_cost:+.2f})")
                 best_cost = new_cost
                 best_tour = new_tour.copy()
             elif restarts <= 5 or restarts % 5 == 0:
-                print(f"    restart {restarts}: {sweeps_r} sweeps, val_cost={new_cost:.2f} (no improve)")
+                print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f}")
         print(f"  done: {restarts} restarts, best val_cost={best_cost:.2f}")
         return best_tour, inference_calls, restarts
     else:
