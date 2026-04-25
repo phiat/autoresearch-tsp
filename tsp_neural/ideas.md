@@ -176,3 +176,23 @@ writeups consulted.
   [src: Bello, Pham, Le, Norouzi, Bengio 2016 "Neural Combinatorial
   Optimization with RL"; Kool 2019 attention model with REINFORCE
   baseline]
+
+## Appended (research: modern-learned — cycle 35 tick)
+
+Sources surveyed: DACT (Ma et al., NeurIPS 2021, arXiv:2110.02544),
+EAS (Hottung et al., ICLR 2022, arXiv:2106.05126), Sym-NCO (Kim et al.,
+NeurIPS 2022, arXiv:2205.13209), POMO (Kwon et al., NeurIPS 2020,
+arXiv:2010.16011), GLOP (Ye et al., AAAI 2024, arXiv:2312.08224).
+All ideas avoid new dependencies; partition step uses scipy.
+
+- M8. Add two tour-position cyclic features to the existing MLP input — sin(2π·rank_i/N) and cos(2π·rank_i/N) where rank_i is city i's position index in the current tour — so the ranker distinguishes moves that cross the tour's "seam" (high positional distance) from local moves; retrain on existing T7 data with the expanded 11-feature input — addresses the plateau by giving the ranker information DACT showed is load-bearing for improvement models. [src: DACT cyclic positional encoding, arXiv:2110.02544]
+
+- E7. Insert a single bottleneck adapter layer (Linear 32→8→32 with ReLU, ~320 params) between the two existing hidden layers of the frozen MLP and fine-tune only that adapter for ~50 SGD steps on the accepted moves from the most recent ILS restart before each subsequent restart; this is the EAS-Lay principle applied to our ranker — the base model stays fixed (no OOD risk), the adapter shifts the scoring boundary toward the current tour's local geometry; targets the 5-10x speed goal by keeping the forward pass tiny while gaining per-restart adaptivity. [src: EAS Hottung et al. ICLR 2022, arXiv:2106.05126]
+
+- T9. For each (features, label) row in the existing moves/ harvest, generate 7 symmetric copies via coordinate transforms (4 rotations × 2 reflections of the x/y fields in the feature vector) before training; costs zero extra solver runs and 8x's effective training set size — directly addresses training data volume without a new harvest, and Sym-NCO showed this alone cuts optimality gap by ~0.2% for similarly-sized models. [src: Sym-NCO Kim et al. NeurIPS 2022, arXiv:2205.13209]
+
+- I8. Replace the single NN-greedy construction seed with a best-of-8 multi-start: build 8 greedy tours from 8 random distinct starting cities (numpy vectorizable; adds ~0.5s), keep the lowest-cost tour as VND input — POMO showed that exploiting rotational symmetry via multiple starts consistently finds lower-cost initial solutions, giving VND a higher floor without any model change; costs no training and fits within the 300s budget. [src: POMO Kwon et al. NeurIPS 2020, arXiv:2010.16011]
+
+- C13. Geographic k-means subtour reoptimization: use scipy.cluster.vq.kmeans2 to partition all 197K cities into ~1000 clusters of ~200 cities each, extract each cluster's contiguous subtour segment from the current best tour, run the full learned-VND (2-opt+Or-opt) locally on those ~200 cities treating them as a standalone TSP, then splice the improved subtour back in; this is a large-neighborhood destroy-and-repair that bypasses the 200-outer-round ILS cap by working in small independent neighborhoods — GLOP's partition concept without its GNN, implementable with scipy alone. [src: GLOP Ye et al. AAAI 2024, arXiv:2312.08224; scipy.cluster.vq]
+
+- R7. Replace the immediate-gain binary label with a deferred-reward label: for each accepted move during a VND sweep, record whether the move survives to the *converged* local optimum (i.e., is it still in the tour at VND termination?); label = 1 only if it survives, else 0; this filters out moves that appear improving but get undone by later moves — higher-quality labels than the current "positive gain = 1" scheme without needing an external oracle like LKH; adds a post-sweep label-pass over the existing harvest pipeline. [src: EAS/DACT training philosophy on solution-level vs step-level credit; Costa et al. 2020 learning-2-opt DRL arXiv:2004.01608]
