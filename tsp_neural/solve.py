@@ -489,188 +489,6 @@ def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
     return sweeps, total_inf
 
 
-# ---------------------------------------------------------------------------
-# E1 (cycle 37): batched GPU inference path
-# ---------------------------------------------------------------------------
-
-class _BatchedMLP(torch.nn.Module):
-    """Reconstruct the trained 9-H-H-1 MLP on the GPU for batched inference.
-    Weights come from the loaded numpy checkpoint; identical math to njit
-    `_mlp_score`, but evaluated on N*K candidates per sweep in one launch."""
-    def __init__(self, W1, b1, W2, b2, w3, b3_scalar):
-        super().__init__()
-        H, n_in = W1.shape
-        l1 = torch.nn.Linear(n_in, H)
-        l2 = torch.nn.Linear(H, H)
-        l3 = torch.nn.Linear(H, 1)
-        with torch.no_grad():
-            l1.weight.copy_(torch.from_numpy(W1))
-            l1.bias.copy_(torch.from_numpy(b1))
-            l2.weight.copy_(torch.from_numpy(W2))
-            l2.bias.copy_(torch.from_numpy(b2))
-            l3.weight.copy_(torch.from_numpy(w3.reshape(1, -1)))
-            l3.bias.copy_(torch.tensor([b3_scalar], dtype=torch.float32))
-        self.net = torch.nn.Sequential(l1, torch.nn.ReLU(), l2, torch.nn.ReLU(), l3)
-
-    def forward(self, x):
-        return self.net(x).squeeze(-1)
-
-
-def batch_score_2opt(tour, pos, xy, is_prime_f32, candidates, model_torch,
-                     mu_t, sd_t, device):
-    """Score every (ai, kk) 2-opt candidate using a single GPU forward.
-    Returns scores as float32 ndarray (n-1, K) where row i corresponds to
-    ai=i+1. Invalid candidates get NEG_INF.
-
-    Note: scores reflect tour state at call time. Within a sweep, subsequent
-    accepts make scores stale — but the live `_euclid` gain test in the
-    accept block re-validates, so staleness only affects move ORDERING."""
-    n = len(xy)
-    K = candidates.shape[1]
-    NEG_INF = np.float32(-1e30)
-
-    ai_arr = np.arange(1, n, dtype=np.int64)        # (M,) M=n-1
-    a_arr = tour[ai_arr]                              # (M,)
-    a_next_arr = tour[ai_arr + 1]                     # (M,)
-    c_arr = candidates[a_arr]                         # (M, K)
-    cj_arr = pos[c_arr]                               # (M, K)
-    c_next_arr = tour[cj_arr + 1]                     # (M, K) — safe: cj < n always
-
-    forward = (cj_arr > ai_arr[:, None] + 1) & (cj_arr < n)
-    backward = (cj_arr >= 1) & (cj_arr < ai_arr[:, None] - 1)
-    valid = (c_arr != 0) & (forward | backward)
-
-    a_b = np.broadcast_to(a_arr[:, None], (n - 1, K))
-    an_b = np.broadcast_to(a_next_arr[:, None], (n - 1, K))
-    d0 = xy[a_b] - xy[an_b]
-    d1 = xy[c_arr] - xy[c_next_arr]
-    d2 = xy[a_b] - xy[c_arr]
-    d3 = xy[an_b] - xy[c_next_arr]
-    f0 = np.sqrt((d0 * d0).sum(axis=-1)).astype(np.float32)
-    f1 = np.sqrt((d1 * d1).sum(axis=-1)).astype(np.float32)
-    f2 = np.sqrt((d2 * d2).sum(axis=-1)).astype(np.float32)
-    f3 = np.sqrt((d3 * d3).sum(axis=-1)).astype(np.float32)
-    f4 = np.broadcast_to(is_prime_f32[a_arr][:, None], (n - 1, K)).astype(np.float32)
-    f5 = np.broadcast_to(is_prime_f32[a_next_arr][:, None], (n - 1, K)).astype(np.float32)
-    f6 = is_prime_f32[c_arr]
-    f7 = is_prime_f32[c_next_arr]
-    pd = np.abs(cj_arr - ai_arr[:, None]).astype(np.float32)
-    f8 = np.log1p(pd)
-
-    feats = np.stack([f0, f1, f2, f3, f4, f5, f6, f7, f8], axis=-1)  # (M, K, 9)
-
-    flat = torch.from_numpy(feats.reshape(-1, 9)).to(device, non_blocking=True)
-    flat = (flat - mu_t) / sd_t
-    with torch.no_grad():
-        scores_flat = model_torch(flat).cpu().numpy()
-    scores = scores_flat.reshape(n - 1, K).astype(np.float32)
-    scores[~valid] = NEG_INF
-    return scores
-
-
-@njit(cache=True, fastmath=True)
-def two_opt_sweep_ranked_precomputed(tour, pos, xy, is_prime_f32, candidates, scores):
-    """Variant of two_opt_sweep_ranked that reads precomputed scores instead
-    of evaluating the MLP inline. scores has shape (n-1, K); row i corresponds
-    to ai=i+1. Invalid candidates have scores[i,k] == NEG_INF.
-
-    Validity is re-checked inline (cheap; just integer compares) and the gain
-    test uses live tour state — so accept correctness is unaffected by
-    score staleness from earlier swaps in the same sweep."""
-    n = len(xy)
-    K = candidates.shape[1]
-    used = np.empty(K, dtype=np.bool_)
-    NEG_INF = np.float32(-1e30)
-    n_imp = 0
-    for ai in range(1, n):
-        a = tour[ai]
-        a_next = tour[ai + 1]
-        d_a_anext = _euclid(xy, a, a_next)
-
-        for kk in range(K):
-            used[kk] = False
-
-        accepted = False
-        for slot in range(K):
-            if accepted:
-                break
-            best_kk = -1
-            best_score = NEG_INF
-            for kk in range(K):
-                if not used[kk] and scores[ai - 1, kk] > best_score:
-                    best_kk = kk
-                    best_score = scores[ai - 1, kk]
-            if best_kk < 0 or best_score < 0.0:
-                break
-            used[best_kk] = True
-
-            c = candidates[a, best_kk]
-            if c == 0:
-                continue
-            cj = pos[c]
-            if cj > ai + 1 and cj < n:
-                c_next = tour[cj + 1]
-                d_c_cnext = _euclid(xy, c, c_next)
-                d_a_c = _euclid(xy, a, c)
-                d_anext_cnext = _euclid(xy, a_next, c_next)
-                pf_ai = _prime_factor(ai + 1, is_prime_f32[a])
-                pf_cj_old = _prime_factor(cj + 1, is_prime_f32[c])
-                pf_cj_new = _prime_factor(cj + 1, is_prime_f32[a_next])
-                gain = pf_ai * d_a_anext + pf_cj_old * d_c_cnext \
-                       - pf_ai * d_a_c - pf_cj_new * d_anext_cnext
-                if gain > 1e-12:
-                    lo, hi = ai + 1, cj
-                    while lo < hi:
-                        x, y = tour[lo], tour[hi]
-                        tour[lo], tour[hi] = y, x
-                        pos[y], pos[x] = lo, hi
-                        lo += 1
-                        hi -= 1
-                    n_imp += 1
-                    accepted = True
-            elif cj >= 1 and cj < ai - 1:
-                c_next = tour[cj + 1]
-                d_c_cnext = _euclid(xy, c, c_next)
-                d_a_c = _euclid(xy, a, c)
-                d_anext_cnext = _euclid(xy, a_next, c_next)
-                pf_cj = _prime_factor(cj + 1, is_prime_f32[c])
-                pf_ai_old = _prime_factor(ai + 1, is_prime_f32[a])
-                pf_ai_new = _prime_factor(ai + 1, is_prime_f32[c_next])
-                gain = pf_ai_old * d_a_anext + pf_cj * d_c_cnext \
-                       - pf_cj * d_a_c - pf_ai_new * d_anext_cnext
-                if gain > 1e-12:
-                    lo, hi = cj + 1, ai
-                    while lo < hi:
-                        x, y = tour[lo], tour[hi]
-                        tour[lo], tour[hi] = y, x
-                        pos[y], pos[x] = lo, hi
-                        lo += 1
-                        hi -= 1
-                    n_imp += 1
-                    accepted = True
-    return n_imp
-
-
-def run_2opt_ranked_batched(tour, pos, xy, is_prime_f32, candidates,
-                            model_torch, mu_t, sd_t, device, budget,
-                            max_sweeps=10_000):
-    n = len(xy)
-    K = candidates.shape[1]
-    sweeps = 0
-    total_inf = 0
-    while sweeps < max_sweeps and not budget.expired():
-        scores = batch_score_2opt(tour, pos, xy, is_prime_f32, candidates,
-                                  model_torch, mu_t, sd_t, device)
-        n_imp = two_opt_sweep_ranked_precomputed(
-            tour, pos, xy, is_prime_f32, candidates, scores,
-        )
-        sweeps += 1
-        total_inf += (n - 1) * K
-        if n_imp == 0:
-            break
-    return sweeps, total_inf
-
-
 def load_latest_checkpoint():
     paths = sorted(CHECKPOINTS_DIR.glob("*.pt"), key=lambda p: p.stat().st_mtime)
     if not paths:
@@ -753,16 +571,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         return tour, inference_calls, restarts
     elif ranked_weights is not None:
         is_prime_f32 = is_prime.astype(np.float32)
-        W1, b1, W2, b2, w3, b3_scalar, mu, sd = ranked_weights
-        use_gpu = torch.cuda.is_available()
-        if use_gpu:
-            device = torch.device("cuda")
-            model_torch = _BatchedMLP(W1, b1, W2, b2, w3, b3_scalar).to(device).eval()
-            mu_t = torch.from_numpy(mu).to(device)
-            sd_t = torch.from_numpy(sd).to(device)
-            print(f"  running 2-opt (RANK, E1 GPU-batched) + Or-opt + ILS on {device} ...")
-        else:
-            print("  running 2-opt (RANK, I5 CPU) + Or-opt (classical) + ILS ...")
+        print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
         MAX_VND_OUTER = 10
         def vnd(t, p):
@@ -775,13 +584,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             outer = 0
             while not budget.expired() and outer < MAX_VND_OUTER:
                 outer += 1
-                if use_gpu:
-                    s2, ninf = run_2opt_ranked_batched(
-                        t, p, xy, is_prime_f32, candidates,
-                        model_torch, mu_t, sd_t, device, budget,
-                    )
-                else:
-                    s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
+                s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
                 total_2opt_sweeps += s2
                 total_inf += ninf
                 if budget.expired():
