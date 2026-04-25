@@ -99,8 +99,16 @@ L=4,5 inside the LNS repair phase"). Combinations are tagged `X`
 2018 cost — euclidean tour length with a 1.1× multiplier on every 10th step
 whose origin city is not prime. Lower is better.
 
-**Memory** is a soft constraint. The 4070 has 16 GB VRAM and the host has
-ample RAM; don't blow either out.
+**Memory** is a soft constraint. **This run targets a host with
+ample RAM and an RTX 4070 (16 GB VRAM, unused by this loop — heuristic
+is CPU/numba only).** Don't blow either out.
+
+**Forking on different hardware?** This loop is CPU-bound; the
+relevant spec is core count and RAM. Edit the assumption above if
+your host differs significantly (e.g., a 4-core laptop will struggle
+with the 5-min budget — consider tightening `K_NEIGHBORS` or
+disabling the more expensive Or-opt sweeps). Call out the change
+in a `meta:` commit.
 
 **Simplicity criterion**: same as autoresearch. Big complexity for tiny
 gains is not worth it. Removing code to get equal or better results is a
