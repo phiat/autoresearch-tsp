@@ -139,15 +139,89 @@ def build_candidates(xy, k):
     return idx[:, 1:].astype(np.int32)
 
 
-def run_2opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
-    """Run 2-opt sweeps until convergence or budget exhausted. Returns sweep count."""
-    sweeps = 0
-    while sweeps < max_sweeps and not budget.expired():
-        n_imp = two_opt_sweep(tour, pos, xy, candidates)
-        sweeps += 1
-        if n_imp == 0:
+@njit(cache=True, fastmath=True)
+def or1_sweep(tour, pos, xy, candidates):
+    """Or-1: relocate single city to a better position (after one of its k-NN).
+    Returns number of improvements applied."""
+    n = len(xy)
+    K = candidates.shape[1]
+    n_imp = 0
+    for s in range(1, n):
+        x = tour[s]
+        a = tour[s - 1]
+        b = tour[s + 1]
+        d_ax = _euclid(xy, a, x)
+        d_xb = _euclid(xy, x, b)
+        d_ab = _euclid(xy, a, b)
+        gap_save = d_ax + d_xb - d_ab  # >= 0 by triangle inequality
+        if gap_save <= 1e-12:
+            continue
+        best_gain = 1e-12
+        best_t = -1
+        for kk in range(K):
+            t_city = candidates[x, kk]
+            t = pos[t_city]
+            if t == s or t == s - 1 or t >= n - 1:
+                continue
+            u = tour[t]
+            v = tour[t + 1]
+            d_uv = _euclid(xy, u, v)
+            d_ux = _euclid(xy, u, x)
+            d_xv = _euclid(xy, x, v)
+            insert_cost = d_ux + d_xv - d_uv  # >= 0 by triangle inequality
+            gain = gap_save - insert_cost
+            if gain > best_gain:
+                best_gain = gain
+                best_t = t
+        if best_t < 0:
+            continue
+        t = best_t
+        if t < s:
+            # shift tour[t+1..s-1] right by 1, place x at t+1
+            for q in range(s, t + 1, -1):
+                cy = tour[q - 1]
+                tour[q] = cy
+                pos[cy] = q
+            tour[t + 1] = x
+            pos[x] = t + 1
+        else:  # t > s
+            # shift tour[s+1..t] left by 1, place x at t
+            for q in range(s, t):
+                cy = tour[q + 1]
+                tour[q] = cy
+                pos[cy] = q
+            tour[t] = x
+            pos[x] = t
+        n_imp += 1
+    return n_imp
+
+
+def run_local(tour, pos, xy, candidates, budget, max_outer=20):
+    """Alternate 2-opt and Or-1 sweeps until both converge or budget exhausted."""
+    total_2opt = 0
+    total_or1 = 0
+    for outer in range(max_outer):
+        if budget.expired():
             break
-    return sweeps
+        s2 = 0
+        while not budget.expired():
+            n_imp = two_opt_sweep(tour, pos, xy, candidates)
+            s2 += 1
+            if n_imp == 0:
+                break
+        total_2opt += s2
+        if budget.expired():
+            break
+        s1 = 0
+        while not budget.expired():
+            n_imp = or1_sweep(tour, pos, xy, candidates)
+            s1 += 1
+            if n_imp == 0:
+                break
+        total_or1 += s1
+        if s2 == 1 and s1 == 1:
+            break
+    return total_2opt, total_or1
 
 
 def double_bridge(tour, rng):
@@ -184,25 +258,25 @@ def solve(xy, is_prime, budget):
     pos = np.empty(n, dtype=np.int64)
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
-    print("  running 2-opt to local optimum ...")
-    sweeps = run_2opt(tour, pos, xy, candidates, budget)
-    print(f"  2-opt converged in {sweeps} sweeps, remaining {budget.remaining():.1f}s")
+    print("  running 2-opt + Or-1 to local optimum ...")
+    s2, s1 = run_local(tour, pos, xy, candidates, budget)
+    print(f"  local converged: {s2} 2-opt sweeps, {s1} or-1 sweeps, remaining {budget.remaining():.1f}s")
 
     best_tour = tour.copy()
     best_cost = score_tour(best_tour, xy, is_prime)
-    print(f"  cost after 2-opt: {best_cost:.2f}")
+    print(f"  cost after local search: {best_cost:.2f}")
 
     if budget.remaining() < 1:
         return best_tour
 
-    print("  running ILS (double-bridge + 2-opt) ...")
+    print("  running ILS (double-bridge + local-search) ...")
     rng = np.random.default_rng(0xBEEF)
     iters = 0
     accepts = 0
     while not budget.expired():
         cand = double_bridge(best_tour, rng)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
-        run_2opt(cand, pos, xy, candidates, budget)
+        run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
             # don't waste a score call on a possibly-incomplete optimisation
             break
