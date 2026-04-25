@@ -230,6 +230,82 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
     return n_imp
 
 
+@njit(cache=True, fastmath=True, inline='always')
+def _step_cost(xy, is_prime, k, a, b):
+    """Length of step k (1-indexed) going city a → b, with Santa penalty."""
+    dx = xy[b, 0] - xy[a, 0]
+    dy = xy[b, 1] - xy[a, 1]
+    length = (dx * dx + dy * dy) ** 0.5
+    if k % 10 == 0 and not is_prime[a]:
+        return length * 1.1
+    return length
+
+
+@njit(cache=True, fastmath=True)
+def _swap_delta(tour, xy, is_prime, i, j):
+    """Cost delta if we swap tour[i] and tour[j], with 0 < i < j < N."""
+    if j == i + 1:
+        a = tour[i - 1]
+        x = tour[i]
+        y = tour[j]
+        c = tour[j + 1]
+        old = (_step_cost(xy, is_prime, i, a, x)
+               + _step_cost(xy, is_prime, i + 1, x, y)
+               + _step_cost(xy, is_prime, j + 1, y, c))
+        new = (_step_cost(xy, is_prime, i, a, y)
+               + _step_cost(xy, is_prime, i + 1, y, x)
+               + _step_cost(xy, is_prime, j + 1, x, c))
+        return new - old
+    ai = tour[i - 1]
+    bi = tour[i + 1]
+    aj = tour[j - 1]
+    bj = tour[j + 1]
+    x = tour[i]
+    y = tour[j]
+    old = (_step_cost(xy, is_prime, i, ai, x)
+           + _step_cost(xy, is_prime, i + 1, x, bi)
+           + _step_cost(xy, is_prime, j, aj, y)
+           + _step_cost(xy, is_prime, j + 1, y, bj))
+    new = (_step_cost(xy, is_prime, i, ai, y)
+           + _step_cost(xy, is_prime, i + 1, y, bi)
+           + _step_cost(xy, is_prime, j, aj, x)
+           + _step_cost(xy, is_prime, j + 1, x, bj))
+    return new - old
+
+
+@njit(cache=True, fastmath=True)
+def prime_swap_pass(tour, pos, xy, is_prime, candidates):
+    """For each penalty position k (k%10==0, origin non-prime), try swapping
+    the origin city with a prime city from its k-NN. Accept if total cost drops."""
+    n = xy.shape[0]
+    K = candidates.shape[1]
+    n_imp = 0
+    for k in range(10, n, 10):
+        i = k - 1
+        if i < 1 or i > n - 2:
+            continue
+        b = tour[i]
+        if is_prime[b]:
+            continue
+        for kk in range(K):
+            p = candidates[b, kk]
+            if p == 0 or not is_prime[p]:
+                continue
+            j = pos[p]
+            if j < 1 or j > n - 2 or j == i:
+                continue
+            ii = i if i < j else j
+            jj = j if i < j else i
+            delta = _swap_delta(tour, xy, is_prime, ii, jj)
+            if delta < -1e-12:
+                tour[i], tour[j] = tour[j], tour[i]
+                pos[tour[i]] = i
+                pos[tour[j]] = j
+                n_imp += 1
+                break
+    return n_imp
+
+
 def run_local(tour, pos, xy, candidates, budget, max_outer=20):
     """Alternate 2-opt and Or-{1,2,3} sweeps until all converge or budget exhausted."""
     total_2opt = 0
@@ -325,6 +401,19 @@ def solve(xy, is_prime, budget):
             print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
                   f"remaining {budget.remaining():.1f}s")
     print(f"  ILS done: {iters} iters, {accepts} improvements")
+
+    print("  running prime-swap post-pass ...")
+    pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
+    total_prime_imp = 0
+    for sweep in range(20):
+        n_imp = prime_swap_pass(best_tour, pos, xy, is_prime, candidates)
+        total_prime_imp += n_imp
+        if n_imp == 0:
+            break
+    new_cost = score_tour(best_tour, xy, is_prime)
+    print(f"  prime-swap: {total_prime_imp} swaps applied, cost {best_cost:.2f} -> {new_cost:.2f}")
+    if new_cost < best_cost:
+        best_cost = new_cost
     return best_tour
 
 
