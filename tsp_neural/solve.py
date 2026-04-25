@@ -315,13 +315,27 @@ def _mlp_score(x, W1, b1, W2, b2, w3, b3_scalar, h1, h2):
     return s
 
 
+@njit(cache=True, fastmath=True, inline='always')
+def _prime_factor(p_one_indexed, origin_is_prime):
+    """1.1 if step k=p_one_indexed is a 10th step AND origin city is non-prime,
+    else 1.0. Mirrors prepare.score_tour's penalty rule exactly at boundary
+    edges of a 2-opt swap."""
+    if (p_one_indexed % 10) == 0 and origin_is_prime < 0.5:
+        return 1.1
+    return 1.0
+
+
 @njit(cache=True, fastmath=True)
 def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                          W1, b1, W2, b2, w3, b3_scalar, mu, sd):
     """2-opt sweep where candidates per ai are visited in descending MLP score
     order; first improving swap is taken (one accept per ai). Cycle-3 was
     'try single best then give up'; this is the I5 variant — iterate by score
-    until improving or pool exhausted."""
+    until improving or pool exhausted.
+
+    Z1 (cycle 22): the accept-test uses *prime-aware* gain at the swap's two
+    boundary edges (positions ai and cj). Interior 10th-step penalties from
+    the reversed segment are not yet accounted for."""
     n = len(xy)
     K = candidates.shape[1]
     H = W1.shape[0]
@@ -397,8 +411,14 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
             cj = pos[c]
             if cj > ai + 1 and cj < n:
                 c_next = tour[cj + 1]
-                gain = d_a_anext + _euclid(xy, c, c_next) \
-                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+                d_c_cnext = _euclid(xy, c, c_next)
+                d_a_c = _euclid(xy, a, c)
+                d_anext_cnext = _euclid(xy, a_next, c_next)
+                pf_ai = _prime_factor(ai + 1, is_prime_f32[a])
+                pf_cj_old = _prime_factor(cj + 1, is_prime_f32[c])
+                pf_cj_new = _prime_factor(cj + 1, is_prime_f32[a_next])
+                gain = pf_ai * d_a_anext + pf_cj_old * d_c_cnext \
+                       - pf_ai * d_a_c - pf_cj_new * d_anext_cnext
                 if gain > 1e-12:
                     lo, hi = ai + 1, cj
                     while lo < hi:
@@ -411,8 +431,14 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                     accepted = True
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
-                gain = d_a_anext + _euclid(xy, c, c_next) \
-                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+                d_c_cnext = _euclid(xy, c, c_next)
+                d_a_c = _euclid(xy, a, c)
+                d_anext_cnext = _euclid(xy, a_next, c_next)
+                pf_cj = _prime_factor(cj + 1, is_prime_f32[c])
+                pf_ai_old = _prime_factor(ai + 1, is_prime_f32[a])
+                pf_ai_new = _prime_factor(ai + 1, is_prime_f32[c_next])
+                gain = pf_ai_old * d_a_anext + pf_cj * d_c_cnext \
+                       - pf_cj * d_a_c - pf_ai_new * d_anext_cnext
                 if gain > 1e-12:
                     lo, hi = cj + 1, ai
                     while lo < hi:
