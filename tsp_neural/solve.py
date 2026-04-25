@@ -573,14 +573,16 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         is_prime_f32 = is_prime.astype(np.float32)
         print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
+        MAX_VND_OUTER = 10
         def vnd(t, p):
             """Variable neighborhood descent: alternate learned 2-opt and
-            classical Or-opt until both find no improvement."""
+            classical Or-opt until both find no improvement (or MAX_VND_OUTER
+            outer rounds — caps the initial converge so ILS restarts fit)."""
             total_2opt_sweeps = 0
             total_or_sweeps = 0
             total_inf = 0
             outer = 0
-            while not budget.expired():
+            while not budget.expired() and outer < MAX_VND_OUTER:
                 outer += 1
                 s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
                 total_2opt_sweeps += s2
