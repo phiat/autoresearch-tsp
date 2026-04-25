@@ -593,14 +593,16 @@ def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
 
 def _ils_worker_neural(args):
     """Top-level (must be picklable) worker for multiprocessing.Pool. Runs one
-    ILS iteration: 2x double-bridge + VND local search up to worker_budget_sec,
-    score, return (val_cost, tour, inference_calls). Reads xy / candidates /
-    weights from module globals set by the parent (inherited via fork COW)."""
-    seed_tour, rng_seed, worker_budget_sec = args
+    ILS iteration: perturb_count× double-bridge + VND local search up to
+    worker_budget_sec, score, return (val_cost, tour, inference_calls). Reads
+    xy / candidates / weights from module globals set by the parent (inherited
+    via fork COW)."""
+    seed_tour, rng_seed, worker_budget_sec, perturb_count = args
     rng = np.random.default_rng(rng_seed)
 
-    new_tour = double_bridge(seed_tour, rng)
-    new_tour = double_bridge(new_tour, rng)
+    new_tour = seed_tour
+    for _ in range(perturb_count):
+        new_tour = double_bridge(new_tour, rng)
 
     n = _W_XY.shape[0]
     pos = np.empty(n, dtype=np.int64)
@@ -616,11 +618,19 @@ def _ils_worker_neural(args):
 
 
 def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
-                      ranked_weights, budget, workers, worker_budget_sec):
+                      ranked_weights, budget, workers, worker_budget_sec,
+                      initial_converge=False, initial_perturb=1,
+                      initial_budget_sec=30.0):
     """Batched parallel ILS for the neural loop. Allocates a fork pool ONCE,
     dispatches `workers` perturb+VND jobs per batch, blocks for the slowest,
     accepts the batch's best if it improves the shared best, repeats until
     `budget.remaining() < worker_budget`.
+
+    If `initial_converge=True` (C19): the first batch dispatches workers from
+    `best_tour` (a NN seed) with `initial_perturb`× DB and `initial_budget_sec`
+    VND budget. Best of `workers` becomes the initial best; the standard PILS
+    loop runs from there. Saves the ~30s sequential converge bottleneck and
+    gains 8-way starting-point diversity. `best_cost` is ignored in this mode.
 
     Returns (best_tour, best_cost, total_inference_calls, batches, accepts).
     """
@@ -632,7 +642,8 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
     _W_RANKED_WEIGHTS = ranked_weights
 
     print(f"  running PARALLEL ILS "
-          f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s) ...")
+          f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s, "
+          f"initial_converge={initial_converge}) ...")
 
     rng = np.random.default_rng(ILS_SEED)
     ctx = mp.get_context("fork")
@@ -643,12 +654,33 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
     accepts = 0
 
     with ctx.Pool(processes=workers) as pool:
+        if initial_converge:
+            args_list = [
+                (best_tour, int(rng.integers(0, 2**31 - 1)),
+                 initial_budget_sec, initial_perturb)
+                for _ in range(workers)
+            ]
+            results = pool.map(_ils_worker_neural, args_list)
+            batch_num += 1
+            total_iters += len(results)
+            for _, _, ninf in results:
+                total_inf += ninf
+            cand_cost, cand_tour, _ = min(results, key=lambda r: r[0])
+            best_cost = cand_cost
+            best_tour = cand_tour
+            accepts += 1
+            print(f"    init batch (best of {workers}, "
+                  f"{initial_perturb}xDB, {initial_budget_sec:.0f}s): "
+                  f"best_cost={best_cost:.2f}, "
+                  f"remaining {budget.remaining():.1f}s")
+
         while not budget.expired():
             if budget.remaining() < worker_budget_sec + 2.0:
                 break
 
             args_list = [
-                (best_tour, int(rng.integers(0, 2**31 - 1)), worker_budget_sec)
+                (best_tour, int(rng.integers(0, 2**31 - 1)),
+                 worker_budget_sec, 2)
                 for _ in range(workers)
             ]
             results = pool.map(_ils_worker_neural, args_list)
@@ -721,27 +753,31 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         is_prime_f32 = is_prime.astype(np.float32)
         print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
-        # Initial converge — always sequential (single tour, single core).
-        s2, sor, ninf = _vnd_local(
-            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
-            max_outer=10,
-        )
-        inference_calls += ninf
-        best_tour = tour.copy()
-        best_cost = score_tour(best_tour, xy, is_prime)
-        print(f"  initial converge: 2opt={s2}sw, or-opt={sor}sw, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
-
         if ILS_WORKERS > 1:
+            # C19: skip the sequential initial converge; the first PILS batch
+            # runs from the NN tour with 1× DB perturbation and 30s VND budget,
+            # 8-way parallel. Best of 8 becomes initial best, freeing the ~30s
+            # of single-core wall time the sequential converge consumed.
             best_tour, best_cost, ninf_par, batches, accepts = parallel_ils_loop(
-                best_tour, best_cost, xy, is_prime, candidates, ranked_weights,
+                tour, 0.0, xy, is_prime, candidates, ranked_weights,
                 budget,
                 workers=ILS_WORKERS, worker_budget_sec=ILS_WORKER_BUDGET,
+                initial_converge=True, initial_perturb=1, initial_budget_sec=30.0,
             )
             inference_calls += ninf_par
             # Report restarts as total worker iterations for backward compat
             # with the metrics field.
             restarts = batches * ILS_WORKERS
         else:
+            # Sequential ILS legacy path: keep the sequential initial converge.
+            s2, sor, ninf = _vnd_local(
+                tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
+                max_outer=10,
+            )
+            inference_calls += ninf
+            best_tour = tour.copy()
+            best_cost = score_tour(best_tour, xy, is_prime)
+            print(f"  initial converge: 2opt={s2}sw, or-opt={sor}sw, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
             rng = np.random.default_rng(ILS_SEED)
             while not budget.expired():
                 new_tour = best_tour.copy()
