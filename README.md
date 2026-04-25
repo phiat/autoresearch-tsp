@@ -122,10 +122,13 @@ Detailed run-by-run history lives in each subproject's
 
 ## Methodology caveat — we started "cheating"
 
-At some point during the run we began invoking `paper-researcher`
+Around **heuristic-loop cycle 38** we began invoking `paper-researcher`
 with queries scoped to **Santa 2018-specific writeups** —
 i.e., reading other people's solutions to this exact problem rather
 than only general TSP / heuristic-search / learned-LKH literature.
+(The first such invocation actually fell back to generic GLS / LKH /
+Blazinskas literature per a user instruction, but the *intent* and
+the era directive crossed the line.)
 
 This contaminates the "can the LLM agent independently solve this
 from first principles + generic literature" question. Any subsequent
