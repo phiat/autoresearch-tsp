@@ -502,10 +502,10 @@ def solve(xy, is_prime, budget):
             cand, _ = fast_nn(xy, candidates, seed)
             idx = int(np.where(cand == START_CITY)[0][0])
             cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
-            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.040, bias=8.0)
+            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
             no_improve = 0
             restarts += 1
-            print(f"    [iter {iters}] RANDOM RESTART from city {seed} (LNS-prime smoothed frac=4%)")
+            print(f"    [iter {iters}] RANDOM RESTART from city {seed} (LNS-prime smoothed)")
         else:
             cand = best_tour
             r = rng.random()
