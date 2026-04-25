@@ -68,33 +68,35 @@ the two paradigms once both have rows in their respective
 
 ## Status
 
-*As of 2026-04-25 13:18 EDT. SOTA reference: 1,514,000 (top
+*As of 2026-04-25 13:33 EDT. SOTA reference: 1,514,000 (top
 public-leaderboard scores for Santa 2018). Badge = `100% − gap`,
 where gap = `(val_cost − SOTA) / SOTA`. Higher is better.*
 
-- **`tsp_heuristic/`** &nbsp;`[ 97.76% SOTA ]` — 26 logged cycles.
+- **`tsp_heuristic/`** &nbsp;`[ 97.78% SOTA ]` — 28 logged cycles.
   Pipeline: fast cKDTree-walked NN seed → 2-opt + Or-opt(1,2,3) with
   k-NN candidate lists → ILS with adaptive double-bridge / segment-shift
-  perturbation → prime-aware swap polish. K-shrink vein closed at k=4
-  (k=3 too thin); H3 (RESTART_AFTER 40→60) was a no-op under the seed
-  (Δ=0). LNS at 4% destroy was too aggressive (+683, discarded);
-  currently testing **LNSt** with destroy fraction tightened to 1.5%.
-  Best `val_cost` = **1,547,900** (H1k4). Recaps in
+  perturbation → prime-aware swap polish. **LNSt (NEW BEST)**: large
+  neighborhood search at 1.5% destroy + cheapest-insert as a 3rd ILS
+  arm — 2 restarts, 11 improvements, **`val_cost` = 1,547,644**
+  (−257). The destroy-fraction sweep continues: 4% too aggressive
+  (+683), 1.5% optimal so far, 0.5% too small (+636). Recaps in
   `tsp_heuristic/recap-*.md`.
-- **`tsp_neural/`** &nbsp;`[ 96.24% SOTA ]` — 9 logged cycles. Learning
-  *integrated and improving*:
-  - T1 → M1+R1+T5+T3 → **I1**: harvested 25M moves, trained 1,409-param
-    MLP (held-out AUC **0.9992 vs geographic 0.6532**), distilled into
-    numba inline scoring, integrated as K=10 candidate ranker.
-    `val_cost` = 1,572,701 (−4,597 vs no-learning baseline).
-  - Reverts informed the next iteration: **I3** (K=30 OOD model) and
-    **I1'** (multi-accept per `ai`) both regressed → **T6** harvested
-    50M K=30 moves to retrain the ranker on the OOD region.
-  - **I5 (NEW BEST)**: hybrid fallback — iterate K=10 candidates in
-    MLP-score order, accept *first improving* (vs cycle 3's "give up
-    after model's single best non-improving"). Strict superset of
-    cycle 3's accepts. **`val_cost` = 1,570,922** (−1,779 vs cycle 3,
-    −6,376 vs baseline; 34.66s of 300s budget).
+- **`tsp_neural/`** &nbsp;`[ 96.26% SOTA ]` — 11 logged cycles. Learning
+  *integrated and compounding*:
+  - T1 → M1 → **I1**: harvested 25M moves, trained 1,409-param MLP
+    (held-out AUC **0.9992 vs geographic 0.6532**), distilled into
+    numba inline scoring, K=10 candidate ranker. `val_cost` = 1,572,701.
+  - **I5**: hybrid fallback — iterate K=10 in MLP-score order, accept
+    *first improving* (strict superset of I1's accepts). `val_cost` =
+    1,570,922.
+  - Several K-pool expansions all regressed (I3 K=30, I1' multi-accept,
+    I5+K15) — confirmed K=10 + one-accept-per-`ai` is a sweet spot.
+  - **ILS (NEW BEST)**: double-bridge multi-start with I5 ranker per
+    restart, 16 restarts in 300s — **`val_cost` = 1,570,612**
+    (−310 vs I5). Restart 5 found the lone improvement; 2-opt local
+    optima cluster tight, will need richer moves (Or-opt/LNS) for the
+    next basin break. Currently testing **don't-look bits** for sweep
+    speedup → more restarts/budget.
 
 ## Provenance
 
