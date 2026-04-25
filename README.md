@@ -68,31 +68,33 @@ the two paradigms once both have rows in their respective
 
 ## Status
 
-*As of 2026-04-25 13:08 EDT. SOTA reference: 1,514,000 (top
+*As of 2026-04-25 13:18 EDT. SOTA reference: 1,514,000 (top
 public-leaderboard scores for Santa 2018). Badge = `100% − gap`,
 where gap = `(val_cost − SOTA) / SOTA`. Higher is better.*
 
-- **`tsp_heuristic/`** &nbsp;`[ 97.76% SOTA ]` — 25 logged cycles.
+- **`tsp_heuristic/`** &nbsp;`[ 97.76% SOTA ]` — 26 logged cycles.
   Pipeline: fast cKDTree-walked NN seed → 2-opt + Or-opt(1,2,3) with
   k-NN candidate lists → ILS with adaptive double-bridge / segment-shift
   perturbation → prime-aware swap polish. K-shrink vein closed at k=4
-  (k=3 too thin, +7,121); H3 (RESTART_AFTER 40→60) was a no-op under
-  the seed (Δ=0, discarded). Currently testing **LNS** as a 3rd
-  perturbation arm (4% random remove + cheapest-insert repair). Best
-  `val_cost` = **1,547,900** (H1k4). Recaps in
+  (k=3 too thin); H3 (RESTART_AFTER 40→60) was a no-op under the seed
+  (Δ=0). LNS at 4% destroy was too aggressive (+683, discarded);
+  currently testing **LNSt** with destroy fraction tightened to 1.5%.
+  Best `val_cost` = **1,547,900** (H1k4). Recaps in
   `tsp_heuristic/recap-*.md`.
-- **`tsp_neural/`** &nbsp;`[ 96.12% SOTA ]` — 7 logged cycles. Learning
-  successfully *integrated*:
+- **`tsp_neural/`** &nbsp;`[ 96.24% SOTA ]` — 9 logged cycles. Learning
+  *integrated and improving*:
   - T1 → M1+R1+T5+T3 → **I1**: harvested 25M moves, trained 1,409-param
     MLP (held-out AUC **0.9992 vs geographic 0.6532**), distilled into
     numba inline scoring, integrated as K=10 candidate ranker.
-    Best `val_cost` = **1,572,701** (−4,597 vs no-learning baseline,
-    in 34.75s of 300s budget).
-  - Two follow-ups *regressed* and were reverted: **I3** (K=30 pool +
-    top-10 pick — model OOD on far candidates) and **I1'** (multi-accept
-    per `ai` — the one-accept rule was load-bearing).
-  - Currently: **T6** harvest with K=30 candidate pool (50M rows) to
-    re-train the ranker on the OOD region.
+    `val_cost` = 1,572,701 (−4,597 vs no-learning baseline).
+  - Reverts informed the next iteration: **I3** (K=30 OOD model) and
+    **I1'** (multi-accept per `ai`) both regressed → **T6** harvested
+    50M K=30 moves to retrain the ranker on the OOD region.
+  - **I5 (NEW BEST)**: hybrid fallback — iterate K=10 candidates in
+    MLP-score order, accept *first improving* (vs cycle 3's "give up
+    after model's single best non-improving"). Strict superset of
+    cycle 3's accepts. **`val_cost` = 1,570,922** (−1,779 vs cycle 3,
+    −6,376 vs baseline; 34.66s of 300s budget).
 
 ## Provenance
 
