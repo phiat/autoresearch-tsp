@@ -606,6 +606,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             new_tour = best_tour.copy()
             new_tour = double_bridge(new_tour, rng)
             new_tour = double_bridge(new_tour, rng)
+            new_tour = double_bridge(new_tour, rng)
             new_pos = np.empty(n, dtype=np.int64)
             new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
             s2, sor, ninf = vnd(new_tour, new_pos)
