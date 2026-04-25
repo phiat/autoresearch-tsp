@@ -100,7 +100,7 @@ by a periodic cron job (see `chart-progress` skill).
 
 ## Status
 
-*As of 2026-04-25 18:12 EDT. SOTA = 1,514,000 (Santa 2018 top
+*As of 2026-04-25 19:11 EDT. SOTA = 1,514,000 (Santa 2018 top
 public-LB). `val_cost` is the official Santa 2018 cost (lower is
 better). `% SOTA` = `100 − gap`, where `gap = (val_cost − SOTA) / SOTA`.*
 
