@@ -99,3 +99,27 @@ under `## Appended (cycle N)`. Append-only.
       run; each cycle bootstraps the next.
 - C4. **Mix learned + geographic candidates**: 5 from each, dedup,
       iterate union.
+
+---
+
+## Appended (research: modern-learned — cycle 15 tick)
+
+Sources surveyed: NeuroLKH (NeurIPS 2021, arXiv:2110.07983), DIFUSCO (NeurIPS 2023, arXiv:2302.08224), GLOP (AAAI 2024, arXiv:2312.08224), EAS (ICLR 2022, arXiv:2106.05126), T2T (NeurIPS 2023, Thinklab-SJTU/T2TCO), GNN-GLS (arXiv:2110.05291).
+
+- M6. Train a tiny sparse-GNN (2-layer, 20-dim node embedding, k=10 neighbour edges) to output per-edge inclusion scores matching NeuroLKH's SGN, then distill weights into a numba-compatible forward pass so the resulting edge-priority array replaces the current geographic NN candidate set — [src: NeuroLKH, arXiv:2110.07983]
+
+- T6. Harvest edge-level binary labels (edge in current best tour = 1, else 0) each cycle and train the M6 sparse-GNN with BCE loss on those labels, accumulating across cycles so the model self-improves as the tour quality rises — [src: NeuroLKH supervised edge training, arXiv:2110.07983]
+
+- I6. Use the trained edge-score array as a learned candidate-edge filter: at 2-opt sweep time, only evaluate (i, j) pairs where the M6 score exceeds a threshold tau (tune tau so ~15 candidates/node survive), replacing the current NN lookup — cuts quadratic sweep cost while concentrating moves where the model says an edge is tour-worthy — [src: GNN-GLS heat-map guided local search, arXiv:2110.05291]
+
+- R5. Add a prime-position auxiliary loss during M6 training: up-weight BCE loss by factor 1.1 on every 10th-position edge that originates from a non-prime city (mirroring the competition penalty), so the learned candidate set is prime-cost-aware rather than geometry-only — [src: competition-specific adaptation of NeuroLKH penalty node features, Santa 2018 prime constraint]
+
+- E6. Implement a one-shot inference pass: after Or-opt converges each cycle, run a single batched forward pass of the numba-distilled M6 model over all N*k candidate pairs (N=197769, k=10) to pre-rank edges, then store the ranked index array; 2-opt in the next ILS restart reads from this cached array instead of recomputing NN distances — amortises model cost over all subsequent restarts within the 5-min budget — [src: EAS inference-time adaptation idea adapted to cache-based deployment, arXiv:2106.05126]
+
+## Appended (cycle 20 self-generated tick)
+
+Lessons from rows 1-19: pool-K>10 always regresses; one-accept-per-ai beats multi-accept; classical Or-opt + learned 2-opt is the +17k breakthrough; AUC≈1.0 ceiling means single-cycle retrains do not move val_cost; ILS gains are sub-1k per attempt. Open frontier = move-type breadth and data refresh, not architecture tweaks.
+
+- C6. **VND-data harvest + retrain**: log 2-opt candidates *during* the C1 pipeline (not baseline NN-2opt); train.py loads union and produces a model trained on tours the deployed solver actually sees — [self: post-cycle-15 plateau, model never saw post-Or-opt move distributions]
+- I7. **Sound don't-look bits**: on swap, clear dont_look for *all cities in the reversed segment* (linear cost, but segments are short at steady state); fixes cycle-12/13 regressions where cycle 9 quality was lost — [self: lessons from cycles 12-13]
+- C7. **Or-opt-2 / Or-opt-3 chains under MLP guidance**: 2-opt-trained MLP pre-scores chain insertions; iterate top by score; combines new move types with learning instead of layering classical-only — [self: Or-opt-1 was +17k; chain length 2-3 typically +0.1–0.5% on TSPLIB]
