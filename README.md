@@ -120,6 +120,25 @@ Detailed run-by-run history lives in each subproject's
 - **Task**: [Kaggle Traveling Santa 2018 Prime Paths](https://www.kaggle.com/competitions/traveling-santa-2018-prime-paths/).
 - **Inspired by this video**: [marimo: autoresearch on the Santa 2018 TSP](https://www.youtube.com/watch?v=bMoNOb0iXpA).
 
+## Methodology caveat — we started "cheating"
+
+At some point during the run we began invoking `paper-researcher`
+with queries scoped to **Santa 2018-specific writeups** —
+i.e., reading other people's solutions to this exact problem rather
+than only general TSP / heuristic-search / learned-LKH literature.
+
+This contaminates the "can the LLM agent independently solve this
+from first principles + generic literature" question. Any subsequent
+`val_cost` lift may have been seeded by an idea the agent recognized
+from a competition writeup rather than derived autonomously.
+
+We're keeping the door open going forward: experiments and
+harness-evaluation reports should distinguish the un-contaminated
+subset (pre-domain-research, plus runs using only `classical` /
+`hybrid` / `modern-learned` era queries) from the contaminated
+subset (post-domain-research, runs using `domain-specific` era
+queries). Note this explicitly in any future write-up.
+
 ## License
 
 MIT.
