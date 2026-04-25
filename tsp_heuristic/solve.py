@@ -496,8 +496,12 @@ def solve(xy, is_prime, budget):
     restarts = 0
     no_improve = 0
     RESTART_AFTER = 40
+    forced_done = False
     while not budget.expired():
-        if no_improve >= RESTART_AFTER:
+        force_late = (not forced_done) and budget.remaining() < 20.0 and restarts == 0
+        if no_improve >= RESTART_AFTER or force_late:
+            if force_late:
+                forced_done = True
             seed = int(rng.integers(1, n))
             cand, _ = fast_nn(xy, candidates, seed)
             idx = int(np.where(cand == START_CITY)[0][0])
