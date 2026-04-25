@@ -333,6 +333,89 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
 
 
 @njit(cache=True, fastmath=True)
+def _lns_relink_regret(tour, xy, candidates, removed_set, removed_order):
+    """Like _lns_relink but uses regret-2 ordering: compute (2nd-best - best)
+    insertion-cost regret for each removed city against the post-excision
+    topology, then insert cities in descending-regret order so high-preference
+    cities claim their best slot before others can block it."""
+    n = candidates.shape[0]
+    K = candidates.shape[1]
+    nxt = np.empty(n, dtype=np.int64)
+    prv = np.empty(n, dtype=np.int64)
+    in_tour = np.empty(n, dtype=np.bool_)
+    for i in range(n):
+        a = tour[i]
+        b = tour[i + 1]
+        nxt[a] = b
+        prv[b] = a
+    for c in range(n):
+        in_tour[c] = not removed_set[c]
+    for c in range(n):
+        if removed_set[c]:
+            p = prv[c]
+            x = nxt[c]
+            nxt[p] = x
+            prv[x] = p
+    R = removed_order.shape[0]
+    start = tour[0]
+    regrets = np.empty(R, dtype=np.float64)
+    for idx in range(R):
+        c = removed_order[idx]
+        best_cost = 1e30
+        second_best = 1e30
+        for kk in range(K):
+            u = candidates[c, kk]
+            if not in_tour[u]:
+                continue
+            v = nxt[u]
+            d_uc = _euclid(xy, u, c)
+            d_cv = _euclid(xy, c, v)
+            d_uv = _euclid(xy, u, v)
+            cost = d_uc + d_cv - d_uv
+            if cost < best_cost:
+                second_best = best_cost
+                best_cost = cost
+            elif cost < second_best:
+                second_best = cost
+        regrets[idx] = second_best - best_cost
+    sort_order = np.argsort(regrets)
+    for ii in range(R - 1, -1, -1):
+        idx = sort_order[ii]
+        c = removed_order[idx]
+        best_cost = 1e30
+        best_u = -1
+        for kk in range(K):
+            u = candidates[c, kk]
+            if not in_tour[u]:
+                continue
+            v = nxt[u]
+            d_uc = _euclid(xy, u, c)
+            d_cv = _euclid(xy, c, v)
+            d_uv = _euclid(xy, u, v)
+            cost = d_uc + d_cv - d_uv
+            if cost < best_cost:
+                best_cost = cost
+                best_u = u
+        if best_u < 0:
+            best_u = start
+        u = best_u
+        v = nxt[u]
+        nxt[u] = c
+        prv[c] = u
+        nxt[c] = v
+        prv[v] = c
+        in_tour[c] = True
+    out = np.empty(n + 1, dtype=tour.dtype)
+    out[0] = start
+    out[n] = start
+    cur = start
+    for i in range(1, n):
+        cur = nxt[cur]
+        out[i] = cur
+    return out
+
+
+@njit(cache=True, fastmath=True)
 def _lns_relink(tour, xy, candidates, removed_set, removed_order):
     """Destroy-repair perturbation. Excises cities flagged in removed_set from
     the tour cycle, then reinserts each city in removed_order at its cheapest
@@ -428,7 +511,7 @@ def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0)
     removed_set = np.zeros(n, dtype=np.bool_)
     removed_set[rem] = True
     rng.shuffle(rem)
-    return _lns_relink(tour, xy, candidates, removed_set, rem)
+    return _lns_relink_regret(tour, xy, candidates, removed_set, rem)
 
 
 def double_bridge(tour, rng):
