@@ -587,14 +587,16 @@ def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
 
 def _ils_worker_neural(args):
     """Top-level (must be picklable) worker for multiprocessing.Pool. Runs one
-    ILS iteration: 2x double-bridge + VND local search up to worker_budget_sec,
-    score, return (val_cost, tour, inference_calls). Reads xy / candidates /
-    weights from module globals set by the parent (inherited via fork COW)."""
-    seed_tour, rng_seed, worker_budget_sec = args
+    ILS iteration: n_perturb double-bridges + VND local search up to
+    worker_budget_sec, score, return (val_cost, tour, inference_calls). Reads
+    xy / candidates / weights from module globals set by the parent
+    (inherited via fork COW)."""
+    seed_tour, rng_seed, worker_budget_sec, n_perturb = args
     rng = np.random.default_rng(rng_seed)
 
-    new_tour = double_bridge(seed_tour, rng)
-    new_tour = double_bridge(new_tour, rng)
+    new_tour = seed_tour
+    for _ in range(n_perturb):
+        new_tour = double_bridge(new_tour, rng)
 
     n = _W_XY.shape[0]
     pos = np.empty(n, dtype=np.int64)
@@ -641,9 +643,16 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
             if budget.remaining() < worker_budget_sec + 2.0:
                 break
 
+            # Cycle 41 PILSmix: rotate perturbation strength across workers in
+            # the batch — half do 2x (sweet spot per cycle 15), quarter do 1x
+            # (small radius probe), quarter do 3x (large radius probe). Cycle
+            # 19's variable-strength regression was sequential-only; with K=8
+            # parallel shots we can afford 2-4 exploratory ones per batch.
+            perturb_schedule = [2, 2, 2, 2, 1, 1, 3, 3]
             args_list = [
-                (best_tour, int(rng.integers(0, 2**31 - 1)), worker_budget_sec)
-                for _ in range(workers)
+                (best_tour, int(rng.integers(0, 2**31 - 1)), worker_budget_sec,
+                 perturb_schedule[i % len(perturb_schedule)])
+                for i in range(workers)
             ]
             results = pool.map(_ils_worker_neural, args_list)
             batch_num += 1
