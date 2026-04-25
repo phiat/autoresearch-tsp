@@ -1,0 +1,12 @@
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+
+# Vendored upstream (its own git repo)
+autoresearch/
+
+# Raw competition archive
+traveling-santa-2018-prime-paths.zip
+

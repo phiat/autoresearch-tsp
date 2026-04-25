@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+results.tsv
+run.log
+data/cities.csv
+data/sample_submission.csv
+data/is_prime.npy
+submissions/
+.cache/

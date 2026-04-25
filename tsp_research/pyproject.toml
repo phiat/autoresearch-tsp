@@ -1,0 +1,13 @@
+[project]
+name = "tsp-research"
+version = "0.1.0"
+description = "Autoresearch-style harness for the Kaggle Traveling Santa 2018 Prime Paths TSP"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "sympy>=1.13",
+    "scipy>=1.13",
+    "numba>=0.60",
+]
