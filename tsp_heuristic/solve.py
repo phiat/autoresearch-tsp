@@ -413,7 +413,9 @@ def lns_perturb(tour, rng, xy, candidates, frac=0.015):
 def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0):
     """LNS variant that biases the destroy-set toward penalty-origin cities
     (non-prime cities currently sitting at tour position k-1 where k%10==0).
-    Couples the destroy operator with the Santa metric structure."""
+    After cheapest-insertion repair, runs one prime_swap_pass polish to fix
+    the transient prime-position misalignments reinsertion typically creates
+    (X5: combines Z1 post-pass with LNS-prime repair phase)."""
     n = candidates.shape[0]
     n_remove = max(2, int(n * frac))
     start_city = int(tour[0])
@@ -428,7 +430,11 @@ def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0)
     removed_set = np.zeros(n, dtype=np.bool_)
     removed_set[rem] = True
     rng.shuffle(rem)
-    return _lns_relink(tour, xy, candidates, removed_set, rem)
+    new_tour = _lns_relink(tour, xy, candidates, removed_set, rem)
+    pos = np.empty(n, dtype=np.int64)
+    pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
+    prime_swap_pass(new_tour, pos, xy, is_prime, candidates)
+    return new_tour
 
 
 def double_bridge(tour, rng):
