@@ -156,8 +156,8 @@ def build_candidates(xy, k):
 
 @njit(cache=True, fastmath=True)
 def or_seg_sweep(tour, pos, xy, candidates, L):
-    """Or-opt with segment length L (1, 2, or 3). Inserts forward (no reversal)
-    after the best position drawn from the k-NN of the segment's first city."""
+    """Or-opt with segment length L (1, 2, or 3). For L>=2, evaluates BOTH forward
+    and reversed re-insertion at each candidate target and picks the best."""
     n = len(xy)
     K = candidates.shape[1]
     n_imp = 0
@@ -174,6 +174,7 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
             continue
         best_gain = 1e-12
         best_t = -1
+        best_rev = False
         for kk in range(K):
             t_city = candidates[x0, kk]
             t = pos[t_city]
@@ -186,20 +187,31 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
             d_uv = _euclid(xy, u, v)
             d_ux0 = _euclid(xy, u, x0)
             d_xLv = _euclid(xy, xL, v)
-            insert_cost = d_ux0 + d_xLv - d_uv
-            gain = gap_save - insert_cost
-            if gain > best_gain:
-                best_gain = gain
+            gain_fwd = gap_save - (d_ux0 + d_xLv - d_uv)
+            if gain_fwd > best_gain:
+                best_gain = gain_fwd
                 best_t = t
+                best_rev = False
+            if L >= 2:
+                d_uxL = _euclid(xy, u, xL)
+                d_x0v = _euclid(xy, x0, v)
+                gain_rev = gap_save - (d_uxL + d_x0v - d_uv)
+                if gain_rev > best_gain:
+                    best_gain = gain_rev
+                    best_t = t
+                    best_rev = True
         if best_t < 0:
             continue
         t = best_t
-        # Stash segment cities then shift the gap closed and reinsert.
         seg0 = tour[s]
         seg1 = tour[s + 1] if L >= 2 else 0
         seg2 = tour[s + 2] if L >= 3 else 0
+        if best_rev:
+            if L == 2:
+                seg0, seg1 = seg1, seg0
+            else:  # L == 3
+                seg0, seg2 = seg2, seg0
         if t < s - 1:
-            # shift tour[t+1..s-1] right by L positions
             for q in range(s + L - 1, t + L, -1):
                 cy = tour[q - L]
                 tour[q] = cy
@@ -212,8 +224,7 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
             if L >= 3:
                 tour[t + 3] = seg2
                 pos[seg2] = t + 3
-        else:  # t > s + L - 1
-            # shift tour[s+L..t] left by L positions
+        else:
             for q in range(s, t - L + 1):
                 cy = tour[q + L]
                 tour[q] = cy
