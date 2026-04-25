@@ -27,7 +27,7 @@ K_NEIGHBORS = 4
 # Parallel ILS knobs (env-overridable so agents can revert to single-thread).
 # WORKERS=1 → sequential ILS (legacy path).
 # WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
-ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 14))
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
 
