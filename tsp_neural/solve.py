@@ -552,7 +552,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         best_cost = score_tour(best_tour, xy, is_prime)
         print(f"  initial converge: 2opt={s2}sw, or-opt={sor}sw, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
 
-        rng = np.random.default_rng(1)
+        rng = np.random.default_rng(0)
         while not budget.expired():
             new_tour = best_tour.copy()
             new_tour = double_bridge(new_tour, rng)
