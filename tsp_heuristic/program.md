@@ -68,11 +68,32 @@ hyperparam sweeps, pipelines). Treat it as your catalogue.
    bundle ideas. The picked idea is what the description in
    `results.tsv` will say.
 
-**Every 5 logged experiments:** append 2-3 NEW ideas to `ideas.md`
-under a new `## Appended (cycle N)` heading. Base them on what the log
-has shown — variants of what worked, removals of what failed, adjacent
-techniques the literature suggests. Append-only; never delete or
-rewrite older entries.
+**Every 5 logged experiments:** append 2-3 NEW ideas to `ideas.md`.
+The growth tick alternates between two modes:
+
+- **Self-generated ticks** (cycles 10, 20, 30, …): append under
+  `## Appended (cycle N)` based on what the log has shown — variants
+  of what worked, removals of what failed.
+- **Research ticks** (cycles 5, 15, 25, …): MANDATORY invocation of
+  the `paper-researcher` subagent with a specific era directive,
+  rotating through:
+  - cycle 5  → era=`classical`  (Lin-Kernighan, LKH, Or-opt, GLS, …)
+  - cycle 15 → era=`hybrid`     (NeuroLKH, neural-LNS, learned-edges)
+  - cycle 25 → era=`classical`  (drill deeper)
+  - cycle 35 → era=`hybrid`
+  - cycle 45 → era=`domain-specific`  (Santa 2018 writeups)
+  - …rotate (`classical`/`hybrid`/`domain-specific`).
+  The subagent appends under `## Appended (research: <era> — <topic>)`.
+  This forces external knowledge into the pool regularly so the loop
+  doesn't drift into its own basin.
+
+Append-only; never delete or rewrite older entries.
+
+**Permuting kept ideas:** any time the log shows ≥3 kept ideas across
+different classes, invoke the `permute-ideas` skill to propose
+cross-class combinations (e.g. "LNSt + prime-aware repair", "Or-opt
+L=4,5 inside the LNS repair phase"). Combinations are tagged `X`
+(pipeline) when appended.
 
 **The goal: minimise val_cost.** The metric is the official Kaggle Santa
 2018 cost — euclidean tour length with a 1.1× multiplier on every 10th step

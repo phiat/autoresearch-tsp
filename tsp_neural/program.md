@@ -148,9 +148,30 @@ Idea classes specific to this project:
   of times per solve — latency matters).
 - **C** (combination): pipelines that combine learned and classical.
 
-Use these prefixes when adding ideas. Same sample/grow protocol as
-`tsp_heuristic/` — sample uniformly from untried, append 2-3 fresh
-ideas every 5 cycles, append-only.
+Use these prefixes when adding ideas. Sample uniformly from untried.
+
+**Every 5 logged experiments**, the growth tick alternates between:
+
+- **Self-generated ticks** (cycles 10, 20, 30, …): append under
+  `## Appended (cycle N)` based on what the log has shown.
+- **Research ticks** (cycles 5, 15, 25, …): MANDATORY invocation of
+  the `paper-researcher` subagent with an era directive, rotating:
+  - cycle 5  → era=`hybrid`         (NeuroLKH, neural-LNS, learned edges)
+  - cycle 15 → era=`modern-learned` (Kool, POMO, DACT, GLOP, DIFUSCO)
+  - cycle 25 → era=`hybrid`         (drill deeper)
+  - cycle 35 → era=`modern-learned`
+  - cycle 45 → era=`classical`      (move-space inspiration)
+  - …rotate (`hybrid`/`modern-learned`/`classical`).
+  The subagent appends under `## Appended (research: <era> — <topic>)`
+  with `[src: <ref>]` citations on each idea.
+
+Append-only; never delete or rewrite older entries.
+
+**Permuting kept ideas:** any time the log shows ≥3 kept ideas across
+different classes, invoke the `permute-ideas` skill to propose
+cross-class combinations (e.g. "I5 ranker + LNS destroy targets",
+"don't-look bits + ILS double-bridge"). Combinations are tagged `C`
+(combination/pipeline) when appended.
 
 ## NEVER STOP
 

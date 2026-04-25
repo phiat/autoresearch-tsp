@@ -78,6 +78,12 @@ Inherited from `tsp_heuristic/` (same shape, different context):
 - **`compare-runs`** — diff two commits + their measured deltas.
 - **`algo-blueprint`** — paper → patch plan. Useful before
   implementing a new model architecture.
+- **`permute-ideas`** — read kept ideas from `results.tsv`, propose
+  cross-class combinations as `C` (combination/pipeline) experiments.
+  Highest-EV here is M × I × E crosses (model × integration ×
+  engineering). Use after every 3+ kept ideas across different
+  classes, when stuck, or after `paper-researcher` adds building
+  blocks.
 - **`evolve-tooling`** — modify `.claude/` itself.
 
 Project-specific:

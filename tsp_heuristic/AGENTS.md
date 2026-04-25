@@ -65,6 +65,11 @@ just metrics          # pull val_cost / solve_seconds from last run.log
   implementation plan in this codebase's idiom. Use after picking
   an idea but before writing code, especially for algos with
   multiple variants in the literature.
+- **`permute-ideas`** — read kept ideas from `results.tsv`, propose
+  cross-class combinations as `X` (pipeline) experiments. Use any
+  time the log shows ≥3 kept ideas across different classes (per the
+  permute trigger in `program.md`), when stuck on a plateau, or
+  after a `paper-researcher` run added building blocks.
 - **`evolve-tooling`** — modify `.claude/` itself (skills, subagents,
   hooks, slash commands) based on observed friction. Append-only on
   evidence. Use when a recurring chore could be automated, when an

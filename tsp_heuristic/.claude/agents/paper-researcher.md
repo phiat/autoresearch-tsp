@@ -17,15 +17,57 @@ writeups, library docs, blog posts.
 
 ## Inputs
 
-You receive a topic / query string from the parent session. Examples:
-- "LKH-3 candidate edges and α-nearness"
-- "guided local search penalty schedules for TSP"
-- "Santa 2018 Kaggle prime-aware tricks from top finishers"
-- "large neighbourhood search destroy operators"
-
+You receive a topic / query string from the parent session, OR an
+**era directive** (one of `classical`, `modern-learned`, `hybrid`).
 If no topic is given, read `results.tsv` + `recap-*.md` and pick the
 class with the most stagnation (most cycles since a keep, or most
 discards in a row).
+
+## Era taxonomy + seed query lists
+
+Use these to structure your queries. When the parent session passes
+an era directive, **scope all your searches to that era** — do not
+mix eras in one invocation; the loop alternates them on purpose.
+
+### Classical (1970s–2000s, mostly relevant for `tsp_heuristic/`)
+Local-search and metaheuristic literature. Foundational algorithms.
+Seed queries:
+- "Lin-Kernighan sequential 4-opt 5-opt move TSP"
+- "LKH Helsgaun candidate edges alpha-nearness"
+- "Or-opt segment relocation variants TSP"
+- "guided local search GLS edge penalties TSP"
+- "GENIUS GENI insertion heuristic TSP"
+- "GRASP greedy randomized adaptive TSP"
+- "double-bridge 4-opt perturbation iterated local search"
+- "Concorde cutting planes branch-and-cut TSP"
+- "large neighborhood search ALNS destroy repair operators"
+
+### Modern learned (2015+, mostly relevant for `tsp_neural/`)
+End-to-end neural solvers. Less directly applicable here but
+inspiration for "what moves are worth learning."
+Seed queries:
+- "Pointer Networks Vinyals 2015 TSP"
+- "Kool 2019 attention model TSP REINFORCE"
+- "POMO Kwon multiple optimal solutions TSP"
+- "DACT learning-to-improve dual-aspect collaborative transformer"
+- "GLOP global local prompt TSP 2024"
+- "DIFUSCO diffusion graph combinatorial optimization"
+
+### Hybrid (relevant to BOTH loops)
+Learned components inside classical solvers — closest to what
+`tsp_neural/` is doing.
+Seed queries:
+- "NeuroLKH learned candidate edges Lin-Kernighan"
+- "Hottung neural large neighborhood search routing"
+- "L2D learning to delegate combinatorial optimization"
+- "MatNet matrix encoding routing problems"
+- "deep learning candidate-edge scoring TSP"
+- "learned 2-opt move ranker neural network"
+
+### Domain-specific (always allowed regardless of era)
+Santa 2018 has its own unique structure (prime penalty, fixed scale).
+- "Kaggle Santa 2018 prime paths top solutions writeup"
+- "TSP with side constraints prime number penalty"
 
 ## Workflow
 
@@ -50,16 +92,18 @@ discards in a row).
 5. Append a new section to `ideas.md` of the form:
 
    ```
-   ## Appended (research: <topic>)
+   ## Appended (research: <era> — <topic>)
 
-   <one-line intro stating the source/theme>
+   <one-line intro stating the source/theme + a citation or two
+    (paper title or short URL stub) so the trail is auditable>
 
-   - L9. <idea> — <why>
-   - O5. <idea> — <why>
+   - L9. <idea> — <why>  [src: <short ref>]
+   - O5. <idea> — <why>  [src: <short ref>]
    - ...
    ```
 
-   **Do not edit existing entries.** Append-only.
+   **Do not edit existing entries.** Append-only. Tag each idea with
+   the source so future loops know where it came from.
 6. Output a 3-5 line confirmation to the parent session: topic, how
    many ideas added, and the single most promising one with a
    one-line rationale.
