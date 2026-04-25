@@ -68,15 +68,23 @@ the two paradigms once both have rows in their respective
 
 ## Status
 
-- **`tsp_heuristic/`** — pipeline matured to: fast cKDTree-walked NN
-  seed → 2-opt + Or-opt(1,2,3) local search with k-NN candidate lists
-  → ILS with adaptive double-bridge / segment-shift perturbation →
-  prime-aware swap polish. Current best `val_cost` ≈ **1,548K** (~14.6%
-  off the identity-tour baseline). Recap series in
-  `tsp_heuristic/recap-*.md`.
-- **`tsp_neural/`** — scaffolded; agent's first 3 cycles must
-  introduce learning per `tsp_neural/program.md` (harvest moves →
-  train small scorer → integrate into 2-opt).
+- **`tsp_heuristic/`** — 22+ logged cycles. Pipeline matured to: fast
+  cKDTree-walked NN seed → 2-opt + Or-opt(1,2,3) local search with
+  k-NN candidate lists → ILS with adaptive double-bridge / segment-shift
+  perturbation → prime-aware swap polish. Currently exploring the
+  `K_NEIGHBORS` shrink vein (k=10 → 7 → 5 → 4 → 3 each won). Best
+  `val_cost` ≈ **1,547,900** (~14.6% off the identity-tour baseline).
+  Recap series in `tsp_heuristic/recap-*.md`.
+- **`tsp_neural/`** — first 4 cycles done, learning *integrated*:
+  - T1: harvested 25M 2-opt candidates from a baseline run.
+  - M1+R1+T5+T3: trained a 1,409-param 2-layer MLP on those moves
+    (BCE on accept/reject, balanced classes); held-out AUC **0.9992
+    vs the geographic baseline's 0.6532**.
+  - I1: distilled the MLP into numba inline scoring; integrated as
+    candidate ranker (best-improvement-by-score per `ai`, K=10).
+    First learned solver run: **`val_cost` 1,572,701** — −4,597 (−0.29%)
+    vs the no-learning baseline at 1,577,298, in 34.75s of 300s budget.
+    Plenty of headroom for more sweeps + bigger models.
 
 For reference, top public-leaderboard scores for Santa 2018 were in
 the 1.514M range.
