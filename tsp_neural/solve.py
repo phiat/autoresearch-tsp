@@ -573,7 +573,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         is_prime_f32 = is_prime.astype(np.float32)
         print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
-        MAX_VND_OUTER = 10
+        MAX_VND_OUTER = 15
         def vnd(t, p):
             """Variable neighborhood descent: alternate learned 2-opt and
             classical Or-opt until both find no improvement (or MAX_VND_OUTER
