@@ -251,15 +251,11 @@ def _mlp_score(x, W1, b1, W2, b2, w3, b3_scalar, h1, h2):
 
 @njit(cache=True, fastmath=True)
 def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
-                         W1, b1, W2, b2, w3, b3_scalar, mu, sd, dont_look):
+                         W1, b1, W2, b2, w3, b3_scalar, mu, sd):
     """2-opt sweep where candidates per ai are visited in descending MLP score
     order; first improving swap is taken (one accept per ai). Cycle-3 was
     'try single best then give up'; this is the I5 variant — iterate by score
-    until improving or pool exhausted.
-
-    `dont_look[city]` skips that city as ai if no improvement was found for
-    it last sweep; cleared (set False) for the 4 swap endpoints on every
-    accepted swap. Caller is responsible for resetting dont_look at restart."""
+    until improving or pool exhausted."""
     n = len(xy)
     K = candidates.shape[1]
     H = W1.shape[0]
@@ -277,8 +273,6 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
     n_inf = 0
     for ai in range(1, n):
         a = tour[ai]
-        if dont_look[a]:
-            continue
         a_next = tour[ai + 1]
         d_a_anext = _euclid(xy, a, a_next)
 
@@ -349,10 +343,6 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                         hi -= 1
                     n_imp += 1
                     accepted = True
-                    dont_look[a] = False
-                    dont_look[a_next] = False
-                    dont_look[c] = False
-                    dont_look[c_next] = False
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
                 gain = d_a_anext + _euclid(xy, c, c_next) \
@@ -367,24 +357,18 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                         hi -= 1
                     n_imp += 1
                     accepted = True
-                    dont_look[a] = False
-                    dont_look[a_next] = False
-                    dont_look[c] = False
-                    dont_look[c_next] = False
-        if not accepted:
-            dont_look[a] = True
     return n_imp, n_inf
 
 
 def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
-                    weights, budget, dont_look, max_sweeps=10_000):
+                    weights, budget, max_sweeps=10_000):
     W1, b1, W2, b2, w3, b3_scalar, mu, sd = weights
     sweeps = 0
     total_inf = 0
     while sweeps < max_sweeps and not budget.expired():
         n_imp, n_inf = two_opt_sweep_ranked(
             tour, pos, xy, is_prime_f32, candidates,
-            W1, b1, W2, b2, w3, b3_scalar, mu, sd, dont_look,
+            W1, b1, W2, b2, w3, b3_scalar, mu, sd,
         )
         sweeps += 1
         total_inf += n_inf
@@ -474,11 +458,10 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         return tour, inference_calls, restarts
     elif ranked_weights is not None:
         is_prime_f32 = is_prime.astype(np.float32)
-        print("  running 2-opt (RANK, I5 + don't-look bits + double-bridge ILS) ...")
+        print("  running 2-opt (RANK, I5 + multi-start double-bridge ILS) ...")
 
-        dont_look = np.zeros(n, dtype=np.bool_)
         sweeps, n_inf = run_2opt_ranked(
-            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget, dont_look,
+            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
         )
         inference_calls += n_inf
         best_tour = tour.copy()
@@ -490,10 +473,9 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             new_tour = double_bridge(best_tour, rng)
             new_pos = np.empty(n, dtype=np.int64)
             new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
-            dont_look.fill(False)
             sweeps_r, n_inf_r = run_2opt_ranked(
                 new_tour, new_pos, xy, is_prime_f32, candidates,
-                ranked_weights, budget, dont_look,
+                ranked_weights, budget,
             )
             inference_calls += n_inf_r
             restarts += 1
@@ -502,7 +484,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
                 print(f"    restart {restarts}: {sweeps_r} sweeps, val_cost={new_cost:.2f} ↓ (improved by {best_cost - new_cost:.2f})")
                 best_cost = new_cost
                 best_tour = new_tour.copy()
-            elif restarts <= 5 or restarts % 10 == 0:
+            elif restarts <= 5 or restarts % 5 == 0:
                 print(f"    restart {restarts}: {sweeps_r} sweeps, val_cost={new_cost:.2f} (no improve)")
         print(f"  done: {restarts} restarts, best val_cost={best_cost:.2f}")
         return best_tour, inference_calls, restarts
