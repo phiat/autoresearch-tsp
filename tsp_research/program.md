@@ -38,11 +38,16 @@ scoring). Launch as: `uv run solve.py`.
 
 **What you CANNOT do:**
 - Modify `prepare.py`. Read-only. It defines the metric (`score_tour`),
-  the time budget, the data loader, and the prime mask.
-- Add dependencies beyond what's already in `pyproject.toml` without
-  asking the human first. The pre-approved set is: `numpy`, `pandas`,
-  `sympy`, `scipy`, `numba`. Anything else needs sign-off.
+  the time budget, the data loader, and the prime mask. The
+  `block-frozen-edits.sh` hook enforces this structurally.
+- Add dependencies beyond what's already in `pyproject.toml`. The
+  pre-approved set is: `numpy`, `pandas`, `sympy`, `scipy`, `numba`.
+  The `block-dep-install.sh` hook enforces this structurally — if
+  it fires, stop and ask the human, never try to bypass it.
 - Rewrite the scoring function or change tour validation.
+- Edit `recap-*.md` by hand. Those are owned by the `recap-writer`
+  subagent (route through `/recap`). The frozen-edits hook blocks
+  direct edits.
 
 ## The idea library (`ideas.md`)
 
@@ -131,18 +136,22 @@ d4e5f6g	0	0	crash	scipy KDTree call with bad k argument
 
 LOOP FOREVER:
 
-1. Inspect git state (current branch/commit).
+1. Inspect git state — `just status` (branch, head, last result, recap-pending).
 2. Edit `solve.py` with the next experimental idea.
-3. `git commit -am "exp: <short description>"`
-4. `uv run solve.py > run.log 2>&1`
-   (redirect everything; do NOT use `tee` — it will flood your context)
-5. `grep "^val_cost:\|^solve_seconds:" run.log`
-6. If grep is empty the run crashed. `tail -n 50 run.log` for the
-   traceback. Fix obvious bugs and retry once; if it's a fundamentally
-   broken idea, log "crash" and move on.
-7. Append to `results.tsv`. Do NOT commit it.
-8. If `val_cost` improved, advance the branch (keep the commit).
-9. If equal or worse, `git reset --hard HEAD~1` to drop the experiment.
+3. `just exp "<short description>"` (commits with `exp:` prefix).
+4. `just run` (runs `uv run solve.py > run.log 2>&1`, never use `tee` —
+   it floods your context).
+5. `just metrics` — pulls `val_cost` / `solve_seconds`.
+6. If empty, the run crashed. `just crash` for the traceback. Fix
+   obvious bugs and retry once; if fundamentally broken, log `crash`
+   status and move on.
+7. `just log <commit> <val_cost> <solve_seconds> <status> <description>`
+   — appends to `results.tsv` (not git-tracked).
+8. If `val_cost` improved, keep the commit (advances branch).
+9. If equal or worse, `just revert` (drops the commit).
+10. **Check `.recap-pending`**: if it exists, run `/recap` before
+    starting the next cycle. The `recap-writer` subagent updates the
+    recap and clears the sentinel.
 
 **Timeout**: each run should take ~5 min solver + a few seconds for load
 and scoring. If a run exceeds 10 minutes wall-clock total, kill it and
@@ -152,9 +161,23 @@ treat as a crash.
 human may be asleep or away. Iterate until interrupted. Out of ideas?
 Re-read `ideas.md` (your library — sample from it), then `prepare.py`,
 `solve.py`, this file. Append fresh ideas to `ideas.md` per the growth
-protocol. Look up: 2-opt, Or-opt, Lin-Kernighan, LKH-3, segment
-reversal, candidate lists, k-d tree neighbour pruning, simulated
-annealing, large-neighbourhood search, guided local search,
+protocol — **or invoke the `paper-researcher` subagent** with a
+specific topic to fetch ideas from the literature (Kaggle Santa 2018
+top-finisher writeups in particular).
+
+When stuck (3+ near-zero deltas in a row): invoke the `postmortem`
+skill before sampling the next idea — it classifies the bottleneck
+and recommends a class. When an experiment regresses mysteriously:
+invoke `compare-runs`. When wall-clock dominates over algorithm:
+invoke `profile-solver`. Before implementing a literature-heavy algo:
+invoke `algo-blueprint`. When the loop's *process* (not the code) has
+recurring friction: invoke `evolve-tooling` and commit the change
+with `meta:` prefix.
+
+See `AGENTS.md` for the full tooling inventory and the "when to
+invoke what" decision table. Look up: 2-opt, Or-opt, Lin-Kernighan,
+LKH-3, segment reversal, candidate lists, k-d tree neighbour pruning,
+simulated annealing, large-neighbourhood search, guided local search,
 Concorde-style cuts. The prime-step penalty is small (~10% of every
 10th step) so most generic TSP moves transfer. Try combining
 near-misses. Try more radical changes. The loop runs until the human
