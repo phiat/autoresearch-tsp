@@ -415,6 +415,20 @@ def run_2opt_harvest(tour, pos, xy, candidates, budget, bufs, max_sweeps=10_000)
 # Solver entry point
 # ---------------------------------------------------------------------------
 
+def double_bridge(tour, rng):
+    """Random 4-opt double-bridge perturbation: split into 4 segments at 3 cuts,
+    rebuild as S0+S2+S1+S3. Cannot be undone by a single 2-opt move."""
+    n_inner = len(tour) - 1
+    cuts = np.sort(rng.choice(np.arange(1, n_inner), size=3, replace=False))
+    p1, p2, p3 = int(cuts[0]), int(cuts[1]), int(cuts[2])
+    return np.concatenate([
+        tour[:p1 + 1],
+        tour[p2 + 1:p3 + 1],
+        tour[p1 + 1:p2 + 1],
+        tour[p3 + 1:],
+    ])
+
+
 def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
     print("  building candidate list (cKDTree) ...")
     tree = cKDTree(xy)
@@ -435,22 +449,50 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
     inference_calls = 0
+    restarts = 0
     if harvest_bufs is not None:
         candidates_h = candidates_full[:, :K_NEIGHBORS_HARVEST]
         print(f"  running 2-opt (HARVEST=1, K={K_NEIGHBORS_HARVEST}, logging candidates) ...")
         sweeps = run_2opt_harvest(tour, pos, xy, candidates_h, budget, harvest_bufs)
+        print(f"  2-opt converged in {sweeps} sweeps, remaining {budget.remaining():.1f}s")
+        return tour, inference_calls, restarts
     elif ranked_weights is not None:
-        print("  running 2-opt (RANK, MLP-scored candidate order) ...")
         is_prime_f32 = is_prime.astype(np.float32)
-        sweeps, inference_calls = run_2opt_ranked(
+        print("  running 2-opt (RANK, I5 + multi-start double-bridge ILS) ...")
+
+        sweeps, n_inf = run_2opt_ranked(
             tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
         )
+        inference_calls += n_inf
+        best_tour = tour.copy()
+        best_cost = score_tour(best_tour, xy, is_prime)
+        print(f"  initial converge: {sweeps} sweeps, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
+
+        rng = np.random.default_rng(0)
+        while not budget.expired():
+            new_tour = double_bridge(best_tour, rng)
+            new_pos = np.empty(n, dtype=np.int64)
+            new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
+            sweeps_r, n_inf_r = run_2opt_ranked(
+                new_tour, new_pos, xy, is_prime_f32, candidates,
+                ranked_weights, budget,
+            )
+            inference_calls += n_inf_r
+            restarts += 1
+            new_cost = score_tour(new_tour, xy, is_prime)
+            if new_cost < best_cost:
+                print(f"    restart {restarts}: {sweeps_r} sweeps, val_cost={new_cost:.2f} ↓ (improved by {best_cost - new_cost:.2f})")
+                best_cost = new_cost
+                best_tour = new_tour.copy()
+            elif restarts <= 5 or restarts % 5 == 0:
+                print(f"    restart {restarts}: {sweeps_r} sweeps, val_cost={new_cost:.2f} (no improve)")
+        print(f"  done: {restarts} restarts, best val_cost={best_cost:.2f}")
+        return best_tour, inference_calls, restarts
     else:
         print("  running 2-opt ...")
         sweeps = run_2opt(tour, pos, xy, candidates, budget)
-    print(f"  2-opt converged in {sweeps} sweeps, remaining {budget.remaining():.1f}s")
-
-    return tour, inference_calls
+        print(f"  2-opt converged in {sweeps} sweeps, remaining {budget.remaining():.1f}s")
+        return tour, inference_calls, restarts
 
 
 def main():
@@ -489,7 +531,7 @@ def main():
         else:
             print(f"  loaded ranker checkpoint: {ckpt_path.name}")
 
-    tour, inference_calls = solve(
+    tour, inference_calls, restarts = solve(
         xy, is_prime, budget,
         harvest_bufs=harvest_bufs,
         ranked_weights=ranked_weights,
@@ -523,6 +565,7 @@ def main():
     if ranked_weights is not None:
         print(f"checkpoint:       {ckpt_path}")
         print(f"inference_calls:  {inference_calls}")
+        print(f"restarts:         {restarts}")
     if HARVEST:
         print(f"moves_logged:     {moves_logged}")
         print(f"moves_path:       {moves_path}")
