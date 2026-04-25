@@ -120,6 +120,34 @@ Detailed run-by-run history lives in each subproject's
 - **Task**: [Kaggle Traveling Santa 2018 Prime Paths](https://www.kaggle.com/competitions/traveling-santa-2018-prime-paths/).
 - **Inspired by this video**: [marimo: autoresearch on the Santa 2018 TSP](https://www.youtube.com/watch?v=bMoNOb0iXpA).
 
+## Forking on different hardware
+
+This run targets **one specific host**: an RTX 4070 (16 GB VRAM) +
+ample CPU/RAM. The 5-minute per-cycle budget and the various tuning
+defaults (`K_NEIGHBORS`, model param caps, batch sizes) are sized for
+that machine. Both `program.md` files reflect that target as written.
+
+If you fork on different hardware, treat the program.md hardware lines
+as your customisation point and adjust derived knobs accordingly:
+
+- **`tsp_heuristic/`** is CPU-bound (numpy / scipy / numba — no GPU).
+  Relevant specs are core count and RAM. A 4-core laptop will
+  struggle with the 5-min budget — consider tightening `K_NEIGHBORS`
+  or disabling expensive Or-opt sweeps.
+- **`tsp_neural/`** uses the GPU for PyTorch model training:
+  - **Smaller GPU (≤8 GB)** — cap params at ~250K, halve batch size,
+    consider fp16 / bf16 inference (E-class engineering ideas).
+  - **Larger GPU (24 GB+)** — train bigger MLPs / shallow
+    transformers, but inner-loop inference latency stays the
+    bottleneck — bigger models need to earn their cost vs the
+    distilled-numba baseline.
+  - **CPU-only / MPS** — latency budget will tighten dramatically.
+    May not be worth pursuing the neural differentiator on this
+    hardware vs. just running `tsp_heuristic/`.
+
+Land hardware-target changes (and any derived knob tweaks) in a
+`meta:` commit so the trail is auditable.
+
 ## Methodology caveat — we started "cheating"
 
 Around **heuristic-loop cycle 38** we began invoking `paper-researcher`

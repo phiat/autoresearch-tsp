@@ -61,27 +61,10 @@ After that, the agent samples from `ideas.md` per the standard loop.
 - Add helper modules under `tsp_neural/` if architecture demands —
   `model.py`, `harvest.py`, `train.py` are reasonable. `solve.py`
   remains the entry point.
-- Train models inside the 5-min budget. **This run targets an RTX
-  4070 (16 GB VRAM)** — enough for small (~100K-1M param) models
-  trained from scratch per cycle, OR loaded from `checkpoints/` if a
-  prior cycle saved one.
-
-  **Forking on different hardware?** Edit the GPU assumption *here*
-  in program.md and adjust accordingly:
-  - Smaller GPU (≤8 GB): cap params at ~250K, halve batch size,
-    consider fp16 / bf16 inference (E4-class idea).
-  - Larger GPU (24 GB+): you can train larger MLPs / shallow
-    transformers, but the inner-loop inference latency will still be
-    the bottleneck — bigger models need to earn their cost vs the
-    distilled-numba baseline.
-  - CPU-only (no GPU): switch to MPS or CPU-tensor; latency budget
-    will tighten dramatically. Consider whether the neural
-    differentiator is worth pursuing on this hardware vs. forking
-    `tsp_heuristic/` instead.
-
-  Don't bury the spec change in random commits — call it out in a
-  `meta:` commit so future readers can see when the hardware target
-  shifted.
+- Train models inside the 5-min budget. The 4070 has 16GB VRAM —
+  enough for small (~100K-1M param) models trained from scratch
+  per cycle, OR loaded from `checkpoints/` if a prior cycle saved
+  one.
 - Cache harvested move data in `moves/` (gitignored) — accumulating
   data across cycles is encouraged.
 
