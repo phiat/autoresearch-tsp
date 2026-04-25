@@ -40,28 +40,63 @@ autoresearch/     vendored upstream (karpathy's repo, reference only)
 AGENTS.md         agent guidance for the outer repo
 ```
 
-## Running both loops in parallel
+## Kick off the agents
 
-Both loops commit to **`main`** from the same working tree. File-level
-isolation comes from the separate subdirs (`tsp_heuristic/solve.py` vs
-`tsp_neural/solve.py`); neither loop touches the other's. The
-`revert` recipe in each `justfile` uses `git revert HEAD --no-edit`
-(not `git reset --hard`) so a discard from one loop never wipes the
-other's commits.
+Each loop runs as its **own Claude Code session** inside its subdir.
+Both share branch `main`; each agent only ever edits files inside
+its own subdir, and `just revert` uses `git revert HEAD --no-edit`
+so a discard from one loop never wipes the other's commits.
+
+### One-time setup
 
 ```bash
-# tsp_heuristic — first Claude Code session
-cd tsp_heuristic && uv sync && just data && just run    # smoke test
-# point a Claude Code session here, follow program.md
+# Unzip the Kaggle archive into tsp_heuristic/data/ so cities.csv exists.
+unzip traveling-santa-2018-prime-paths.zip -d tsp_heuristic/data/
 
-# tsp_neural — second Claude Code session (downloads PyTorch first time)
-cd tsp_neural && uv sync && just data && just run       # smoke test
-# point a *separate* Claude Code session here, follow its program.md
+# Install deps for each loop (tsp_neural pulls ~2 GB of PyTorch first time).
+(cd tsp_heuristic && uv sync)
+(cd tsp_neural    && uv sync)
 ```
 
-Two sessions, two subdirs, one branch (`main`), one working tree.
-Their commits will interleave in `git log`. `results.tsv`,
-`run.log`, `submissions/` etc. are per-subdir and gitignored.
+### Launch the heuristic loop
+
+```bash
+cd tsp_heuristic
+claude          # start a fresh Claude Code session here
+```
+
+In the session, paste:
+
+> *"Read `AGENTS.md` and `program.md`. Verify smoke test (`just data` then `just run`), then start the experiment loop on `main` per `program.md`. Iterate until I interrupt — never stop on your own."*
+
+### Launch the neural loop
+
+```bash
+cd tsp_neural
+claude          # start a *second* Claude Code session here
+```
+
+In the session, paste:
+
+> *"Read `AGENTS.md` and `program.md`. Verify smoke test, then start the experiment loop on `main`. Per `program.md`, the first ~3 cycles must introduce learning (T1 harvest → M1 train → I1 integrate). Iterate until I interrupt — never stop on your own."*
+
+### Monitor progress
+
+```bash
+git log --oneline -10                    # interleaved exp: / meta: commits from both loops
+(cd tsp_heuristic && just status)        # per-loop head + last result + recap-pending
+(cd tsp_neural    && just status)
+cat progress.png                          # the cross-loop chart (or open it in a viewer)
+```
+
+The Status table + chart in this README are refreshed automatically
+by a periodic cron job (see `chart-progress` skill).
+
+### Stop a loop
+
+- Interrupt the relevant Claude Code session (Ctrl-C or `/exit`).
+- The other loop is unaffected (separate session, separate
+  `solve.py`, no shared `HEAD` operations).
 
 ## Status
 
