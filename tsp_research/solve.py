@@ -342,6 +342,21 @@ def double_bridge(tour, rng):
     return np.concatenate([tour[:i], tour[j:k], tour[i:j], tour[k:]])
 
 
+def segment_shift(tour, rng):
+    """Cut a random window of ~2-5% of N from the tour and re-insert it at
+    another random position. Alternative perturbation operator."""
+    n = len(tour) - 1
+    w_min = max(2, n // 50)
+    w_max = max(w_min + 1, n // 20)
+    w = int(rng.integers(w_min, w_max))
+    s = int(rng.integers(1, n - w))
+    seg = tour[s:s + w]
+    rest = np.concatenate([tour[:s], tour[s + w:]])
+    # rest length = (n + 1) - w. Insert after position [1, len(rest)-2].
+    insert_pos = int(rng.integers(1, len(rest) - 1))
+    return np.concatenate([rest[:insert_pos], seg, rest[insert_pos:]])
+
+
 # ---------------------------------------------------------------------------
 # Solver entry point
 # ---------------------------------------------------------------------------
@@ -386,7 +401,10 @@ def solve(xy, is_prime, budget):
     while not budget.expired():
         cand = best_tour
         for _ in range(strength):
-            cand = double_bridge(cand, rng)
+            if rng.random() < 0.5:
+                cand = double_bridge(cand, rng)
+            else:
+                cand = segment_shift(cand, rng)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
