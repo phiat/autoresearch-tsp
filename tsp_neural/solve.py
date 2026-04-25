@@ -223,81 +223,6 @@ def run_or_opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
 
 
 @njit(cache=True, fastmath=True)
-def or_opt2_sweep(tour, pos, xy, candidates):
-    """Or-opt with chain length 2: relocate the (x1, x2) chain at (xi, xi+1)
-    to insert before some k-NN candidate. First-improvement, geographic order.
-
-    Edges removed: (prev,x1), (x2,post), (c_prev,c)
-    Edges added:   (prev,post), (c_prev,x1), (x2,c)
-    Internal edge (x1,x2) is preserved."""
-    n = len(xy)
-    K = candidates.shape[1]
-    n_imp = 0
-    for xi in range(1, n - 2):
-        x1 = tour[xi]
-        x2 = tour[xi + 1]
-        prev = tour[xi - 1]
-        post = tour[xi + 2]
-        d_prev_x1 = _euclid(xy, prev, x1)
-        d_x2_post = _euclid(xy, x2, post)
-        d_prev_post = _euclid(xy, prev, post)
-        rem_gain = d_prev_x1 + d_x2_post - d_prev_post
-        if rem_gain <= 1e-12:
-            continue
-        for kk in range(K):
-            c = candidates[x1, kk]
-            if c == 0 or c == prev or c == x1 or c == x2 or c == post:
-                continue
-            cj = pos[c]
-            if cj <= 0 or cj >= n:
-                continue
-            if xi < cj:
-                if cj < xi + 3 or cj > n - 1:
-                    continue
-            else:
-                if xi <= cj or cj > n - 2:
-                    continue
-            c_prev = tour[cj - 1]
-            if c_prev == x1 or c_prev == x2:
-                continue
-            d_cprev_c = _euclid(xy, c_prev, c)
-            d_cprev_x1 = _euclid(xy, c_prev, x1)
-            d_x2_c = _euclid(xy, x2, c)
-            ins_gain = d_cprev_c - d_cprev_x1 - d_x2_c
-            total = rem_gain + ins_gain
-            if total > 1e-12:
-                if xi < cj:
-                    for i in range(xi, cj - 2):
-                        tour[i] = tour[i + 2]
-                        pos[tour[i]] = i
-                    tour[cj - 2] = x1
-                    pos[x1] = cj - 2
-                    tour[cj - 1] = x2
-                    pos[x2] = cj - 1
-                else:
-                    for i in range(xi + 1, cj + 1, -1):
-                        tour[i] = tour[i - 2]
-                        pos[tour[i]] = i
-                    tour[cj] = x1
-                    pos[x1] = cj
-                    tour[cj + 1] = x2
-                    pos[x2] = cj + 1
-                n_imp += 1
-                break
-    return n_imp
-
-
-def run_or_opt2(tour, pos, xy, candidates, budget, max_sweeps=10_000):
-    sweeps = 0
-    while sweeps < max_sweeps and not budget.expired():
-        n_imp = or_opt2_sweep(tour, pos, xy, candidates)
-        sweeps += 1
-        if n_imp == 0:
-            break
-    return sweeps
-
-
-@njit(cache=True, fastmath=True)
 def two_opt_sweep_harvest(tour, pos, xy, candidates,
                           buf_a, buf_a_next, buf_c, buf_c_next,
                           buf_pos_delta, buf_gain, buf_accepted, count_arr):
@@ -602,11 +527,10 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
         def vnd(t, p):
-            """Variable neighborhood descent: rotate learned 2-opt, Or-opt-1
-            and Or-opt-2 until all three find no improvement."""
+            """Variable neighborhood descent: alternate learned 2-opt and
+            classical Or-opt until both find no improvement."""
             total_2opt_sweeps = 0
             total_or_sweeps = 0
-            total_or2_sweeps = 0
             total_inf = 0
             outer = 0
             while not budget.expired():
@@ -618,13 +542,9 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
                     break
                 so = run_or_opt(t, p, xy, candidates, budget)
                 total_or_sweeps += so
-                if budget.expired():
-                    break
-                so2 = run_or_opt2(t, p, xy, candidates, budget)
-                total_or2_sweeps += so2
-                if so <= 1 and so2 <= 1 and outer > 1:
-                    break
-            return total_2opt_sweeps, total_or_sweeps + total_or2_sweeps, total_inf
+                if so <= 1 and outer > 1:
+                    break  # 2-opt also converged on prev iter; both done
+            return total_2opt_sweeps, total_or_sweeps, total_inf
 
         s2, sor, ninf = vnd(tour, pos)
         inference_calls += ninf
