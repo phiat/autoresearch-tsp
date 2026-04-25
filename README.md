@@ -65,13 +65,13 @@ Their commits will interleave in `git log`. `results.tsv`,
 
 ## Status
 
-*As of 2026-04-25 14:05 EDT. SOTA = 1,514,000 (Santa 2018 top
+*As of 2026-04-25 14:11 EDT. SOTA = 1,514,000 (Santa 2018 top
 public-LB). Badge = `100% − gap`. Higher is better.*
 
 | Loop | Badge | Best `val_cost` | Cycles |
 |---|---|---|---|
-| `tsp_heuristic/` | `[ 97.79% SOTA ]` | 1,547,421 | 31 |
-| `tsp_neural/`    | `[ 97.45% SOTA ]` | 1,552,660 | 15 |
+| `tsp_heuristic/` | `[ 97.79% SOTA ]` | 1,547,421 | 32 |
+| `tsp_neural/`    | `[ 97.45% SOTA ]` | 1,552,660 | 16 |
 
 ![Progress](progress.png)
 
