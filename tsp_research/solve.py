@@ -1,27 +1,14 @@
 """
 Santa 2018 TSP solver — the agent's playground.
 
-This is the ONLY file the agent edits. Everything is fair game:
-algorithms, data structures, heuristics, neural nets, whatever fits in
-the TIME_BUDGET wall-clock budget defined in prepare.py.
-
-Contract:
-    - Read xy, is_prime via prepare.load_cities().
-    - Produce a numpy int64 array of length N+1 starting and ending at
-      prepare.START_CITY that visits every CityId exactly once.
-    - Print a summary block (see end of file) so the loop driver can
-      grep the result. The val_cost line is the canonical metric.
-
-The baseline below is nearest-neighbor from city 0. It's intentionally
-simple — beat it.
+Current experiment: L5 — numba-jit'd 2-opt with k=10 cKDTree candidate list,
+seeded by nearest-neighbor from city 0.
 """
 
-import os
-import sys
 import time
-from pathlib import Path
-
 import numpy as np
+from scipy.spatial import cKDTree
+from numba import njit
 
 from prepare import (
     TIME_BUDGET,
@@ -33,31 +20,26 @@ from prepare import (
     write_submission,
 )
 
+K_NEIGHBORS = 10
+
+
 # ---------------------------------------------------------------------------
-# Solver
+# Construction
 # ---------------------------------------------------------------------------
 
 def nearest_neighbor(xy, budget):
-    """Greedy nearest-neighbor tour starting at START_CITY.
-
-    Vectorised with periodic chunking so we stay responsive to the
-    time budget on large N (~2e5).
-    """
     n = len(xy)
     visited = np.zeros(n, dtype=bool)
     tour = np.empty(n + 1, dtype=np.int64)
     tour[0] = START_CITY
     tour[-1] = START_CITY
     visited[START_CITY] = True
-
     cur = START_CITY
     for step in range(1, n):
         if budget.expired():
-            # Fall back to filling remaining slots in original index order.
             remaining = np.where(~visited)[0]
             tour[step:step + len(remaining)] = remaining
             return tour
-
         d = xy - xy[cur]
         d2 = (d * d).sum(axis=1)
         d2[visited] = np.inf
@@ -65,12 +47,111 @@ def nearest_neighbor(xy, budget):
         tour[step] = nxt
         visited[nxt] = True
         cur = nxt
-
     return tour
 
 
+# ---------------------------------------------------------------------------
+# 2-opt with candidate lists (numba)
+# ---------------------------------------------------------------------------
+
+@njit(cache=True, fastmath=True, inline='always')
+def _euclid(xy, a, b):
+    dx = xy[a, 0] - xy[b, 0]
+    dy = xy[a, 1] - xy[b, 1]
+    return (dx * dx + dy * dy) ** 0.5
+
+
+@njit(cache=True, fastmath=True)
+def two_opt_sweep(tour, pos, xy, candidates):
+    """One greedy first-improvement pass; returns number of improvements applied."""
+    n = len(xy)
+    K = candidates.shape[1]
+    n_improvements = 0
+    for ai in range(1, n - 1):
+        a = tour[ai]
+        a_next = tour[ai + 1]
+        d_a_anext = _euclid(xy, a, a_next)
+        for kk in range(K):
+            c = candidates[a, kk]
+            if c == 0 or c == a_next:
+                continue
+            cj = pos[c]
+            if cj <= ai + 1 or cj >= n:
+                continue
+            d_a_c = _euclid(xy, a, c)
+            if d_a_c >= d_a_anext:
+                # gain = (d_a_anext - d_a_c) + (d_c_cnext - d_anext_cnext)
+                # the first term is <=0; second term is bounded by d_a_c (triangle)
+                # cheap prune that drops most non-improving candidates immediately.
+                continue
+            c_next = tour[cj + 1]
+            d_c_cnext = _euclid(xy, c, c_next)
+            d_anext_cnext = _euclid(xy, a_next, c_next)
+            gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
+            if gain > 1e-12:
+                lo = ai + 1
+                hi = cj
+                while lo < hi:
+                    x = tour[lo]
+                    y = tour[hi]
+                    tour[lo] = y
+                    tour[hi] = x
+                    pos[y] = lo
+                    pos[x] = hi
+                    lo += 1
+                    hi -= 1
+                a_next = tour[ai + 1]
+                d_a_anext = _euclid(xy, a, a_next)
+                n_improvements += 1
+                break  # first-improvement on this a
+    return n_improvements
+
+
+def build_candidates(xy, k):
+    tree = cKDTree(xy)
+    _, idx = tree.query(xy, k=k + 1)
+    return idx[:, 1:].astype(np.int32)
+
+
+def two_opt(tour, xy, candidates, budget):
+    n = len(xy)
+    pos = np.empty(n, dtype=np.int64)
+    pos[tour[:-1]] = np.arange(n, dtype=np.int64)
+    sweep = 0
+    while not budget.expired():
+        t0 = time.perf_counter()
+        n_imp = two_opt_sweep(tour, pos, xy, candidates)
+        sweep += 1
+        print(f"  2-opt sweep {sweep}: {n_imp} improvements ({time.perf_counter() - t0:.2f}s, "
+              f"budget remaining {budget.remaining():.1f}s)")
+        if n_imp == 0:
+            break
+    return tour
+
+
+# ---------------------------------------------------------------------------
+# Solver entry point
+# ---------------------------------------------------------------------------
+
 def solve(xy, is_prime, budget):
-    return nearest_neighbor(xy, budget)
+    print("  building NN tour ...")
+    tour = nearest_neighbor(xy, budget)
+    print(f"  NN done in {budget.elapsed():.2f}s, remaining {budget.remaining():.1f}s")
+
+    if budget.remaining() < 5:
+        return tour
+
+    print("  building cKDTree + candidate list ...")
+    t0 = time.perf_counter()
+    candidates = build_candidates(xy, K_NEIGHBORS)
+    print(f"  candidates built in {time.perf_counter() - t0:.2f}s")
+
+    if budget.remaining() < 1:
+        return tour
+
+    print("  running 2-opt ...")
+    tour = two_opt(tour, xy, candidates, budget)
+    return tour
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +160,7 @@ def solve(xy, is_prime, budget):
 
 def main():
     t_start = time.perf_counter()
-    print(f"loading cities ...")
+    print("loading cities ...")
     xy, is_prime = load_cities()
     n = len(xy)
     print(f"  N = {n}")
@@ -89,7 +170,7 @@ def main():
     tour = solve(xy, is_prime, budget)
     solve_seconds = budget.elapsed()
 
-    print(f"scoring ...")
+    print("scoring ...")
     cost = score_tour(tour, xy, is_prime)
     total_seconds = time.perf_counter() - t_start
 
