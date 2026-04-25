@@ -490,7 +490,7 @@ def solve(xy, is_prime, budget):
         return best_tour
 
     print("  running ILS (perturb + local-search, random NN restart on stuck) ...")
-    rng = np.random.default_rng(0xBEEF)
+    rng = np.random.default_rng(0xCAFE)
     iters = 0
     accepts = 0
     restarts = 0
