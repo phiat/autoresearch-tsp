@@ -61,7 +61,7 @@ def build_features(npz_path: Path, xy: np.ndarray, is_prime: np.ndarray):
 
 
 class MLP(nn.Module):
-    def __init__(self, n_in=N_FEATURES, hidden=32):
+    def __init__(self, n_in=N_FEATURES, hidden=16):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_in, hidden),
