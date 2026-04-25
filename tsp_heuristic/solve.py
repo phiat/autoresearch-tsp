@@ -722,27 +722,8 @@ def solve(xy, is_prime, budget):
                 no_improve += 1
         print(f"  ILS done: {iters} iters, {accepts} improvements, {restarts} restarts")
 
-    pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
-
-    print("  running PostOrLong: Or-opt L=6..10 post-pass ...")
-    post_long_imp = 0
-    post_long_L_used = []
-    for L_post in (6, 7, 8, 9, 10):
-        if budget.remaining() < 0.4:
-            break
-        sweeps_this_L = 0
-        while budget.remaining() > 0.4:
-            n_imp = or_seg_sweep(best_tour, pos, xy, candidates, L_post)
-            sweeps_this_L += 1
-            post_long_imp += n_imp
-            if n_imp == 0:
-                break
-        if sweeps_this_L > 0:
-            post_long_L_used.append((L_post, sweeps_this_L))
-    print(f"  PostOrLong: {post_long_imp} long-segment improvements applied "
-          f"(L sweeps: {post_long_L_used})")
-
     print("  running prime-swap post-pass ...")
+    pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
     total_prime_imp = 0
     for sweep in range(20):
         n_imp = prime_swap_pass(best_tour, pos, xy, is_prime, candidates)
