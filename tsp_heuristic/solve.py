@@ -30,6 +30,12 @@ K_NEIGHBORS = 4
 ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 2))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
+# Master rng seed for the ILS loops. Used by ensemble/parallel/sequential
+# entry points; per-worker seeds are derived from this master.
+# Hex or decimal accepted (int(s, 0) parses 0xCAFE, 51966, etc).
+# multi-seed-eval skill sweeps this via ILS_SEED=1 / =2 / =3 etc.
+ILS_SEED = int(os.environ.get("ILS_SEED", "0xCAFE"), 0)
+
 
 # ---------------------------------------------------------------------------
 # Construction
@@ -560,7 +566,7 @@ def ensemble_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
     print(f"  running ENSEMBLE ILS "
           f"({workers} parallel trajectories, each {worker_budget_sec:.0f}s; "
           f"worker 0 = pinned 0xBEEF) ...")
-    rng = np.random.default_rng(0xCAFE)
+    rng = np.random.default_rng(ILS_SEED)
     ctx = mp.get_context("fork")
     args_list = []
     for w in range(workers):
@@ -589,7 +595,7 @@ def parallel_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
     print(f"  running PARALLEL ILS "
           f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s) ...")
 
-    rng = np.random.default_rng(0xCAFE)
+    rng = np.random.default_rng(ILS_SEED)
     ctx = mp.get_context("fork")
 
     batch_num = 0
@@ -674,7 +680,7 @@ def solve(xy, is_prime, budget):
         )
     else:
         print("  running ILS (perturb + local-search, random NN restart on stuck) ...")
-        rng = np.random.default_rng(0xCAFE)
+        rng = np.random.default_rng(ILS_SEED)
         iters = 0
         accepts = 0
         restarts = 0

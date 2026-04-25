@@ -88,6 +88,35 @@ clean:
     @rm -f run.log profile.log .recap-pending
     @echo "cleaned: run.log profile.log .recap-pending"
 
+# Re-run the most recent solve.py state with K different ILS_SEED values.
+# Backs the multi-seed-eval skill — invoke before discarding any
+# experiment whose |val_cost - best| < 750.
+multiseed K="3":
+    @rm -f run.log.seed*
+    @for s in $(seq 1 {{K}}); do \
+        echo "  ILS_SEED=$s ..." ; \
+        ILS_SEED=$s uv run solve.py > run.log.seed$s 2>&1 ; \
+    done
+    @echo
+    @for s in $(seq 1 {{K}}); do \
+        v=$(grep "^val_cost:" run.log.seed$s | awk '{print $2}') ; \
+        printf "  seed=%s  val_cost=%s\n" "$s" "$v" ; \
+    done
+
+# Enumerate untested ideas in ideas.md (no matching id in results.tsv).
+# Backs the untried-ideas skill — invoke when stuck-protocol triggers
+# or when picking the next experiment to avoid saturated veins.
+untried:
+    @python3 ../scripts/untried_ideas.py
+
+# Diagnostic: how many discards in a row, what's the current best, what was last keep.
+stuck:
+    @echo "branch:           $(git branch --show-current)"
+    @echo "last keep:        $(awk -F'\t' 'NR>1 && $4=="keep" {print $1, $2}' results.tsv | tail -1)"
+    @echo "discards since:   $(awk -F'\t' 'NR>1 {if($4=="keep")c=0; else c++} END{print c}' results.tsv)"
+    @echo "best val_cost:    $(awk -F'\t' 'NR>1 && $4=="keep" {if(min==""||$2<min)min=$2}END{print min}' results.tsv)"
+    @echo "total rows:       $(($(wc -l < results.tsv) - 1))"
+
 # Print the project's tool inventory (skills, agents, slash commands, hooks).
 tools:
     @echo "=== Slash commands ==="

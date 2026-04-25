@@ -58,6 +58,12 @@ CHECKPOINTS_DIR = Path(__file__).parent / "checkpoints"
 ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
+# Master rng seed for the ILS loops. Used by the parallel/sequential
+# entry points; per-worker seeds are derived from this master.
+# Hex or decimal accepted (int(s, 0) parses 0xCAFE, 51966, etc).
+# multi-seed-eval skill sweeps this via ILS_SEED=1 / =2 / =3 etc.
+ILS_SEED = int(os.environ.get("ILS_SEED", "0"), 0)
+
 # Module-level globals set by parallel_ils_loop before Pool fork — workers
 # inherit via COW. Avoids per-call IPC of xy / candidates / weights (which
 # would otherwise serialise ~10 MB per task).
@@ -628,7 +634,7 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
     print(f"  running PARALLEL ILS "
           f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s) ...")
 
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(ILS_SEED)
     ctx = mp.get_context("fork")
 
     batch_num = 0
@@ -736,7 +742,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             # with the metrics field.
             restarts = batches * ILS_WORKERS
         else:
-            rng = np.random.default_rng(0)
+            rng = np.random.default_rng(ILS_SEED)
             while not budget.expired():
                 new_tour = best_tour.copy()
                 new_tour = double_bridge(new_tour, rng)
