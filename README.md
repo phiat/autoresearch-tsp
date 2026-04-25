@@ -101,12 +101,13 @@ by a periodic cron job (see `chart-progress` skill).
 ## Status
 
 *As of 2026-04-25 15:11 EDT. SOTA = 1,514,000 (Santa 2018 top
-public-LB). Badge = `100% − gap`. Higher is better.*
+public-LB). `val_cost` is the official Santa 2018 cost (lower is
+better). `% SOTA` = `100 − gap`, where `gap = (val_cost − SOTA) / SOTA`.*
 
-| Loop | Badge | Best `val_cost` | Cycles |
+| Loop | % SOTA | Best `val_cost` | Cycles |
 |---|---|---|---|
-| `tsp_heuristic/` | `[ 97.80% SOTA ]` | 1,547,351 | 40 |
-| `tsp_neural/`    | `[ 97.45% SOTA ]` | 1,552,555 | 23 |
+| `tsp_heuristic/` | 97.80% | 1,547,351 | 40 |
+| `tsp_neural/`    | 97.45% | 1,552,555 | 23 |
 
 ![Progress](progress.png)
 
