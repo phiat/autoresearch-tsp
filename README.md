@@ -17,6 +17,29 @@ scalar metric, append-only ledger — but swaps the substrate: combinatorial
 optimisation over a 197,769-city Euclidean graph with a prime-step penalty,
 metric is total tour cost (lower is better).
 
+## Important — what's *not* being trained
+
+**There is no neural network training in this project.** Unlike the
+upstream autoresearch (which trains a small GPT every cycle and reports
+`val_bpb`), `tsp_research/solve.py` runs **classical heuristic search** —
+nearest-neighbor construction, 2-opt with cKDTree candidate lists,
+Or-opt, iterated local search with adaptive perturbation, prime-aware
+swap polish. The "thing being optimised" is a **permutation of 197,769
+integers** (the tour), not a tensor of weights. Zero learnable parameters.
+No `torch`, no backprop, no `nn.Module`.
+
+The interesting "research" here is the **agent designing the algorithm**,
+not training a model. Each cycle the agent picks an idea (from
+`ideas.md`), edits `solve.py`, runs it, measures the delta, and keeps or
+reverts. Over many cycles a real solver pipeline emerges from the
+sequence of small, verified changes. The model doing the *driving* is
+Claude (Opus 4.7); nothing inside the loop has trainable weights.
+
+(If you want a neural-TSP variant — a pointer network or attention model
+that emits tours autoregressively — that's a different project; this one
+is "agent vs. combinatorial optimisation," not "agent training a neural
+solver.")
+
 ## Layout
 
 ```
