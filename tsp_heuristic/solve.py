@@ -238,6 +238,88 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
     return n_imp
 
 
+@njit(cache=True, fastmath=True)
+def lk3_sweep(tour, pos, xy, candidates):
+    """Depth-2 LK-chain sweep — type-7 3-opt (double reversal).
+
+    For each tour position ai with edge (a=tour[ai], b=tour[ai+1]):
+    - scan candidates[a] for c_city → cj=pos[c_city] with cj > ai+1
+    - scan candidates[b] for e_city → ej=pos[e_city] with ej > cj+1
+    - candidate move removes edges (a,b), (c,d), (e,f) and
+      adds (a,c), (b,e), (d,f) where d=tour[cj+1], f=tour[ej+1].
+      This is a 3-opt type-7 (double reversal): segments [ai+1..cj]
+      and [cj+1..ej] are reversed.
+    - apply the best move at each ai.
+
+    Reaches improving 3-edge exchanges that 2-opt and Or-opt cannot:
+    Or-opt is type-4 (no reversal) and 2-opt is single-edge-pair.
+    """
+    n = len(xy)
+    K = candidates.shape[1]
+    n_imp = 0
+    for ai in range(1, n - 3):
+        a = tour[ai]
+        b = tour[ai + 1]
+        d_ab = _euclid(xy, a, b)
+        best_gain = 1e-12
+        best_cj = -1
+        best_ej = -1
+        for kk1 in range(K):
+            c_city = candidates[a, kk1]
+            if c_city == 0:
+                continue
+            cj = pos[c_city]
+            if cj <= ai + 1 or cj >= n - 2:
+                continue
+            d = tour[cj + 1]
+            d_ac = _euclid(xy, a, c_city)
+            d_cd = _euclid(xy, c_city, d)
+            for kk2 in range(K):
+                e_city = candidates[b, kk2]
+                if e_city == 0 or e_city == c_city:
+                    continue
+                ej = pos[e_city]
+                if ej <= cj + 1 or ej >= n - 1:
+                    continue
+                f = tour[ej + 1]
+                d_be = _euclid(xy, b, e_city)
+                d_ef = _euclid(xy, e_city, f)
+                d_df = _euclid(xy, d, f)
+                gain = d_ab + d_cd + d_ef - d_ac - d_be - d_df
+                if gain > best_gain:
+                    best_gain = gain
+                    best_cj = cj
+                    best_ej = ej
+        if best_cj < 0:
+            continue
+        cj = best_cj
+        ej = best_ej
+        lo = ai + 1
+        hi = cj
+        while lo < hi:
+            x = tour[lo]
+            y = tour[hi]
+            tour[lo] = y
+            tour[hi] = x
+            pos[y] = lo
+            pos[x] = hi
+            lo += 1
+            hi -= 1
+        lo = cj + 1
+        hi = ej
+        while lo < hi:
+            x = tour[lo]
+            y = tour[hi]
+            tour[lo] = y
+            tour[hi] = x
+            pos[y] = lo
+            pos[x] = hi
+            lo += 1
+            hi -= 1
+        n_imp += 1
+    return n_imp
+
+
 @njit(cache=True, fastmath=True, inline='always')
 def _step_cost(xy, is_prime, k, a, b):
     """Length of step k (1-indexed) going city a → b, with Santa penalty."""
@@ -315,9 +397,10 @@ def prime_swap_pass(tour, pos, xy, is_prime, candidates):
 
 
 def run_local(tour, pos, xy, candidates, budget, max_outer=20):
-    """Alternate 2-opt and Or-{1,2,3} sweeps until all converge or budget exhausted."""
+    """Alternate 2-opt, Or-{1..5}, and LK-3opt sweeps until all converge or budget exhausted."""
     total_2opt = 0
     total_or = 0
+    total_lk3 = 0
     for outer in range(max_outer):
         if budget.expired():
             break
@@ -341,9 +424,17 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
             total_or += sL
             if sL > 1:
                 any_or += 1
-        if s2 == 1 and any_or == 0:
+        s_lk = 0
+        while not budget.expired():
+            n_imp = lk3_sweep(tour, pos, xy, candidates)
+            s_lk += 1
+            if n_imp == 0:
+                break
+        total_lk3 += s_lk
+        any_lk = s_lk > 1
+        if s2 == 1 and any_or == 0 and not any_lk:
             break
-    return total_2opt, total_or
+    return total_2opt, total_or, total_lk3
 
 
 @njit(cache=True, fastmath=True)
@@ -659,9 +750,9 @@ def solve(xy, is_prime, budget):
     pos = np.empty(n, dtype=np.int64)
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
-    print("  running 2-opt + Or-{1,2,3} to local optimum ...")
-    s2, sor = run_local(tour, pos, xy, candidates, budget)
-    print(f"  local converged: {s2} 2-opt sweeps, {sor} or-opt sweeps, remaining {budget.remaining():.1f}s")
+    print("  running 2-opt + Or-{1..5} + LK-3opt to local optimum ...")
+    s2, sor, slk = run_local(tour, pos, xy, candidates, budget)
+    print(f"  local converged: {s2} 2-opt sweeps, {sor} or-opt sweeps, {slk} lk3 sweeps, remaining {budget.remaining():.1f}s")
 
     best_tour = tour.copy()
     best_cost = score_tour(best_tour, xy, is_prime)
