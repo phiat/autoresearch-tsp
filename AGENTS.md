@@ -2,13 +2,22 @@
 
 ## Sub-projects
 
-- **`tsp_research/`** — autonomous research loop for the Kaggle Santa
-  2018 TSP. Has its own `AGENTS.md`, `program.md`, and a `.claude/`
-  with skills, subagents, slash commands, and hooks. If you're
-  driving the loop, work from inside `tsp_research/` and read its
-  `AGENTS.md` first.
+- **`tsp_research/`** — classical heuristic-search loop for the Kaggle
+  Santa 2018 TSP. Runs on a `tsp/<tag>` branch in this working tree.
+  Has its own `AGENTS.md`, `program.md`, and `.claude/` toolset.
+- **`tsp_neural/`** — neural-guided local search loop on the same
+  task. Designed to run in a **separate git worktree** on a
+  `neural/<tag>` branch so it can run in parallel with
+  `tsp_research/` without `HEAD` conflicts. Has its own
+  `AGENTS.md`, `program.md`, `.claude/` (with an extra `train-policy`
+  skill), and PyTorch in deps.
 - **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
   its own git repo. Reference only; do not modify.
+
+When both loops are live, **two Claude Code sessions** are running —
+one in this working tree's `tsp_research/`, one in the worktree's
+`tsp_neural/`. They share `.git/` (branches are mutually visible) but
+never share `HEAD`. See the outer `README.md` for worktree setup.
 
 ## Issue tracking
 
@@ -94,3 +103,25 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+## Running two loops in parallel (worktrees)
+
+When `tsp_research/` and `tsp_neural/` are both live, each runs in its
+own **git worktree** (sibling working directories sharing the same
+`.git/`), so neither flips the other's `HEAD`. Sessions for the two
+loops are completely independent and never see each other's working
+tree.
+
+The "Working alongside a live loop session" rules above apply
+**per-worktree**. Additionally:
+
+- Don't reach across worktrees with `git checkout` or branch ops.
+- `meta:` commits affect both loops; batch them, land on `main`, let
+  each loop's agent merge `main` into its branch on its own schedule.
+- `compare-runs` across worktrees works (branches mutually visible)
+  but the data files (`results.tsv`, `moves/`, `checkpoints/`) are
+  per-worktree-local — bring artefacts to one place if you want a
+  joint analysis.
+
+See the outer `README.md` "Running both loops in parallel" section for
+the worktree setup commands.

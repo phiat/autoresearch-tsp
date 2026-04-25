@@ -1,0 +1,126 @@
+# Common commands for the tsp_neural autonomous loop.
+# `just --list` to see all recipes.
+
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set positional-arguments
+
+# Show the recipe list (default).
+default:
+    @just --list
+
+# === Experiment cycle =====================================================
+
+# Run one experiment with the 5-min budget. Output → run.log.
+run:
+    uv run solve.py > run.log 2>&1
+
+# Run solve.py with move-logging enabled (sets HARVEST=1 env var).
+# solve.py should append to moves/<commit>.npz; check before relying on it.
+harvest:
+    HARVEST=1 uv run solve.py > run.log 2>&1
+
+# Training-only run. Convention: solve.py reads MODE=train env and skips
+# the solve phase, training instead and saving to checkpoints/.
+train:
+    MODE=train uv run solve.py > run.log 2>&1
+
+# Pull headline metrics from the last run.log.
+metrics:
+    @grep -E "^(val_cost|solve_seconds|total_seconds|n_cities|model_params|training_seconds|moves_logged|inference_calls):" run.log || \
+        echo "no metrics in run.log — run crashed or never ran. Try: just crash"
+
+# Show tail of run.log for crash diagnosis.
+crash:
+    @tail -n 50 run.log
+
+# Pretty-print results.tsv.
+ledger:
+    @column -t -s $'\t' results.tsv
+
+# Most recent logged experiment row.
+last:
+    @head -n 1 results.tsv | column -t -s $'\t'
+    @tail -n 1 results.tsv | column -t -s $'\t'
+
+# Append a row to results.tsv.
+log COMMIT VAL_COST SOLVE_SECONDS STATUS DESCRIPTION:
+    @printf '%s\t%s\t%s\t%s\t%s\n' "{{COMMIT}}" "{{VAL_COST}}" "{{SOLVE_SECONDS}}" "{{STATUS}}" "{{DESCRIPTION}}" >> results.tsv
+    @echo "appended: {{COMMIT}}  {{VAL_COST}}  {{STATUS}}  {{DESCRIPTION}}"
+
+# Commit a new experiment.
+exp DESCRIPTION:
+    git add -u solve.py model.py harvest.py train.py 2>/dev/null || true
+    git add solve.py
+    git commit -m "exp: {{DESCRIPTION}}"
+
+# Commit a tooling / harness change.
+meta DESCRIPTION:
+    git add -A .claude/ ideas.md program.md justfile AGENTS.md
+    git commit -m "meta: {{DESCRIPTION}}"
+
+# Drop the last commit.
+revert:
+    git reset --hard HEAD~1
+
+# === Inspection ===========================================================
+
+# Composite quick-view.
+status:
+    @echo "branch:      $(git branch --show-current)"
+    @echo "head:        $(git log -1 --oneline)"
+    @echo "results:     $(($(wc -l < results.tsv) - 1)) rows logged"
+    @echo "last row:    $(tail -n 1 results.tsv | tr '\t' ' ')"
+    @echo "moves dir:   $(ls moves/ 2>/dev/null | wc -l) harvested files"
+    @echo "checkpoints: $(ls checkpoints/ 2>/dev/null | wc -l) saved"
+    @[ -f .recap-pending ] && echo "recap:       PENDING (cycle $(cat .recap-pending)) — run /recap" || echo "recap:       up to date"
+
+# Compact git history.
+hist:
+    @git log --oneline -20
+
+# Diff solve.py between two commits.
+diff A="HEAD~1" B="HEAD":
+    git diff "{{A}}" "{{B}}" -- solve.py
+
+# Re-run the data smoke test.
+data:
+    uv run prepare.py
+
+# Score an arbitrary tour CSV.
+score CSV:
+    @uv run python -c "import csv,numpy as np;from prepare import load_cities,score_tour;xy,ip=load_cities();r=csv.reader(open('{{CSV}}'));next(r);t=np.array([int(x[0]) for x in r],dtype=np.int64);print(f'{{CSV}}  val_cost = {score_tour(t,xy,ip):.4f}')"
+
+# Inspect saved checkpoints (just file list + sizes).
+checkpoints:
+    @ls -lah checkpoints/ 2>/dev/null | tail -n +2 || echo "no checkpoints yet"
+
+# Inspect harvested move data.
+moves:
+    @ls -lah moves/ 2>/dev/null | tail -n +2 || echo "no moves harvested yet"
+
+# === Housekeeping =========================================================
+
+clean:
+    @rm -f run.log profile.log .recap-pending
+    @echo "cleaned: run.log profile.log .recap-pending"
+
+# Remove harvested moves + checkpoints (DESTRUCTIVE — confirms required).
+clean-models:
+    @echo "About to delete moves/ and checkpoints/. Press Ctrl-C to cancel."
+    @sleep 5
+    rm -rf moves/ checkpoints/
+    @echo "removed moves/ and checkpoints/"
+
+# Print tooling inventory.
+tools:
+    @echo "=== Slash commands ==="
+    @ls -1 .claude/commands/ 2>/dev/null | sed 's/\.md$//' | sed 's/^/  \//'
+    @echo
+    @echo "=== Subagents ==="
+    @ls -1 .claude/agents/ 2>/dev/null | sed 's/\.md$//' | sed 's/^/  /'
+    @echo
+    @echo "=== Skills ==="
+    @ls -1 .claude/skills/ 2>/dev/null | sed 's/^/  /'
+    @echo
+    @echo "=== Hooks ==="
+    @ls -1 .claude/hooks/ 2>/dev/null | sed 's/^/  /'

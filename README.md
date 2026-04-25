@@ -40,26 +40,59 @@ that emits tours autoregressively — that's a different project; this one
 is "agent vs. combinatorial optimisation," not "agent training a neural
 solver.")
 
-## Layout
+## Layout — two parallel loops, same metric
 
 ```
-tsp_research/         the active loop (harness + agent tooling)
-autoresearch/         vendored upstream (karpathy's repo, reference only)
+tsp_research/         classical heuristic-search loop
+                      (NN → 2-opt → Or-opt → ILS → prime polish)
+
+tsp_neural/           neural-guided local search loop
+                      (small PyTorch model trained per cycle to score
+                       candidate moves; classical pipeline keeps the
+                       glue together)
+
+autoresearch/         vendored upstream (karpathy's repo, reference)
 .beads/               beads issue tracker (project memory)
-AGENTS.md, CLAUDE.md  agent guidance for the outer repo
+AGENTS.md             agent guidance for the outer repo
 ```
 
-The interesting work happens in `tsp_research/` — see
-[`tsp_research/README.md`](tsp_research/README.md) for setup,
-[`tsp_research/AGENTS.md`](tsp_research/AGENTS.md) for the agent tooling
-inventory, and [`tsp_research/program.md`](tsp_research/program.md) for the
-autonomous loop's operating rules.
+Both loops share `prepare.py` semantics (the metric is identical) and
+the same harness shape. They differ in the *lever* the agent pulls:
+algorithm design vs. model design + integration. Each subdir has its
+own `README.md`, `AGENTS.md`, `program.md`, `ideas.md`, and `.claude/`
+toolset.
+
+## Running both loops in parallel
+
+Each loop wants its own branch (`tsp/<tag>` for classical,
+`neural/<tag>` for neural-guided). A single working tree only has one
+`HEAD` at a time, so to run them simultaneously, use **git
+worktrees** — each loop gets a sibling working directory with its own
+checked-out branch.
+
+```bash
+# tsp_research — runs in this working tree on its experiment branch
+cd /home/phiat/lab/apr/auto-rez
+git checkout -b tsp/<tag> main         # one-time
+cd tsp_research/
+# ...point a Claude Code session here, follow program.md
+
+# tsp_neural — runs in a sibling worktree on its own branch
+git -C /home/phiat/lab/apr/auto-rez worktree add -b neural/<tag> ../auto-rez-neural main
+cd /home/phiat/lab/apr/auto-rez-neural/tsp_neural
+uv sync                                # one-time (downloads PyTorch)
+# ...point a *separate* Claude Code session here
+```
+
+The two sessions never collide on `HEAD`. They share the underlying
+`.git/` so branches are mutually visible (handy for `compare-runs`
+across paradigms once both have data).
 
 ## Quick start
 
 ```bash
 # 1. Unzip the Kaggle archive into tsp_research/data/ so cities.csv exists
-# 2. Sync deps and smoke-test
+# 2. Sync deps and smoke-test the classical loop
 cd tsp_research
 uv sync
 just data         # smoke test: loads cities, scores identity tour
@@ -73,6 +106,11 @@ with: *"read AGENTS.md and program.md, then start the loop on branch
 `solve.py`, run experiments, log results, and iterate. Every 4 cycles a
 hook flags a recap-pending sentinel; the agent runs `/recap` to update
 the running `recap-N.md` series.
+
+For the neural loop, do the worktree setup above and run
+`tsp_neural/`'s equivalent: `uv sync` (one-time PyTorch download),
+`just data`, `just run` for the baseline (NN + 2-opt only — intentionally
+weak; the agent's first 3 cycles introduce learning).
 
 ## What's in the toolset
 
