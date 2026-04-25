@@ -46,6 +46,7 @@ import harvest as _harvest
 
 K_NEIGHBORS = 10            # baseline 2-opt and NN seed
 K_NEIGHBORS_HARVEST = 30    # harvest mode logs the wider pool to cover ranker OOD region
+K_NEIGHBORS_RANKED = 15     # mid-expansion pool the I5 ranker scores from
 HARVEST = os.environ.get("HARVEST", "0") == "1"
 MODE = os.environ.get("MODE", "solve")
 RANK = os.environ.get("RANK", "auto")  # "auto" => use ckpt if found; "0" force baseline; "1" require ckpt
@@ -418,7 +419,7 @@ def run_2opt_harvest(tour, pos, xy, candidates, budget, bufs, max_sweeps=10_000)
 def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
     print("  building candidate list (cKDTree) ...")
     tree = cKDTree(xy)
-    k_query = max(K_NEIGHBORS, K_NEIGHBORS_HARVEST) + 1
+    k_query = max(K_NEIGHBORS, K_NEIGHBORS_HARVEST, K_NEIGHBORS_RANKED) + 1
     _, idx = tree.query(xy, k=k_query)
     candidates_full = idx[:, 1:].astype(np.int32)
     candidates = candidates_full[:, :K_NEIGHBORS]
@@ -440,10 +441,11 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         print(f"  running 2-opt (HARVEST=1, K={K_NEIGHBORS_HARVEST}, logging candidates) ...")
         sweeps = run_2opt_harvest(tour, pos, xy, candidates_h, budget, harvest_bufs)
     elif ranked_weights is not None:
-        print("  running 2-opt (RANK, MLP-scored candidate order) ...")
+        candidates_ranker = candidates_full[:, :K_NEIGHBORS_RANKED]
+        print(f"  running 2-opt (RANK, K_in={K_NEIGHBORS_RANKED}, I5 score-order first-improving) ...")
         is_prime_f32 = is_prime.astype(np.float32)
         sweeps, inference_calls = run_2opt_ranked(
-            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
+            tour, pos, xy, is_prime_f32, candidates_ranker, ranked_weights, budget,
         )
     else:
         print("  running 2-opt ...")
