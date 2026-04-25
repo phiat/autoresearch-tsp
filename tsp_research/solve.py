@@ -385,16 +385,21 @@ def solve(xy, is_prime, budget):
     if budget.remaining() < 1:
         return best_tour
 
-    print("  running ILS (double-bridge + local-search) ...")
+    print("  running ILS (adaptive double-bridge + local-search) ...")
     rng = np.random.default_rng(0xBEEF)
     iters = 0
     accepts = 0
+    no_improve = 0
+    strength = 1
+    ESCALATE_AFTER = 30
+    MAX_STRENGTH = 3
     while not budget.expired():
-        cand = double_bridge(best_tour, rng)
+        cand = best_tour
+        for _ in range(strength):
+            cand = double_bridge(cand, rng)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
-            # don't waste a score call on a possibly-incomplete optimisation
             break
         new_cost = score_tour(cand, xy, is_prime)
         iters += 1
@@ -402,9 +407,17 @@ def solve(xy, is_prime, budget):
             best_cost = new_cost
             best_tour = cand.copy()
             accepts += 1
+            no_improve = 0
+            strength = 1
             print(f"    ILS iter {iters}: NEW BEST {best_cost:.2f}, "
                   f"remaining {budget.remaining():.1f}s")
-    print(f"  ILS done: {iters} iters, {accepts} improvements")
+        else:
+            no_improve += 1
+            if no_improve >= ESCALATE_AFTER and strength < MAX_STRENGTH:
+                strength += 1
+                no_improve = 0
+                print(f"    [iter {iters}] escalating perturbation strength to {strength}")
+    print(f"  ILS done: {iters} iters, {accepts} improvements (final strength={strength})")
 
     print("  running prime-swap post-pass ...")
     pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
