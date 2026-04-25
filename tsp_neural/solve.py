@@ -25,6 +25,7 @@ import math
 import os
 import subprocess
 import time
+import multiprocessing as mp
 from pathlib import Path
 
 import numpy as np
@@ -50,6 +51,21 @@ HARVEST = os.environ.get("HARVEST", "0") == "1"
 MODE = os.environ.get("MODE", "solve")
 RANK = os.environ.get("RANK", "auto")  # "auto" => use ckpt if found; "0" force baseline; "1" require ckpt
 CHECKPOINTS_DIR = Path(__file__).parent / "checkpoints"
+
+# Parallel ILS knobs (env-overridable so agents can revert or sweep).
+# ILS_WORKERS=1 → sequential ILS (legacy path).
+# ILS_WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
+ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
+
+# Module-level globals set by parallel_ils_loop before Pool fork — workers
+# inherit via COW. Avoids per-call IPC of xy / candidates / weights (which
+# would otherwise serialise ~10 MB per task).
+_W_XY = None
+_W_IS_PRIME = None
+_W_IS_PRIME_F32 = None
+_W_CANDIDATES = None
+_W_RANKED_WEIGHTS = None
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +540,132 @@ def run_2opt_harvest(tour, pos, xy, is_prime_f32, candidates, budget, bufs, max_
 
 
 # ---------------------------------------------------------------------------
+# Module-level VND used by both the initial converge and the parallel ILS
+# worker. Hoisted out of solve()'s inner closure so multiprocessing workers
+# can call it.
+# ---------------------------------------------------------------------------
+
+def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
+               max_outer=10):
+    """Variable neighborhood descent: alternate learned 2-opt and classical
+    Or-opt until both find no improvement (or max_outer outer rounds — caps
+    the initial converge so ILS restarts fit).
+
+    Returns (total_2opt_sweeps, total_or_sweeps, total_inference_calls).
+    """
+    total_2opt_sweeps = 0
+    total_or_sweeps = 0
+    total_inf = 0
+    outer = 0
+    while not budget.expired() and outer < max_outer:
+        outer += 1
+        s2, ninf = run_2opt_ranked(
+            t, p, xy, is_prime_f32, candidates, ranked_weights, budget
+        )
+        total_2opt_sweeps += s2
+        total_inf += ninf
+        if budget.expired():
+            break
+        so = run_or_opt(t, p, xy, candidates, budget)
+        total_or_sweeps += so
+        if so <= 1 and outer > 1:
+            break  # 2-opt also converged on prev iter; both done
+    return total_2opt_sweeps, total_or_sweeps, total_inf
+
+
+# ---------------------------------------------------------------------------
+# Parallel ILS — multiprocessing fork pool dispatching K perturb-and-improve
+# workers per batch. Each worker takes the current best tour, applies one
+# 2x double-bridge perturbation (cycle-15 sweet spot), runs VND to a fixed
+# per-worker time cap, scores, returns. Parent picks the batch's best and
+# updates the shared best if it improves.
+#
+# Avoids the E1 (cycle 32) staleness pitfall: each worker does a fully
+# sequential VND on its own tour state — no precomputed scores to invalidate.
+# Parallelism is across independent tours, not within a single sweep.
+# ---------------------------------------------------------------------------
+
+def _ils_worker_neural(args):
+    """Top-level (must be picklable) worker for multiprocessing.Pool. Runs one
+    ILS iteration: 2x double-bridge + VND local search up to worker_budget_sec,
+    score, return (val_cost, tour, inference_calls). Reads xy / candidates /
+    weights from module globals set by the parent (inherited via fork COW)."""
+    seed_tour, rng_seed, worker_budget_sec = args
+    rng = np.random.default_rng(rng_seed)
+
+    new_tour = double_bridge(seed_tour, rng)
+    new_tour = double_bridge(new_tour, rng)
+
+    n = _W_XY.shape[0]
+    pos = np.empty(n, dtype=np.int64)
+    pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
+
+    local_budget = TimeBudget(worker_budget_sec)
+    _, _, ninf = _vnd_local(
+        new_tour, pos, _W_XY, _W_IS_PRIME_F32, _W_CANDIDATES,
+        _W_RANKED_WEIGHTS, local_budget,
+    )
+    val = score_tour(new_tour, _W_XY, _W_IS_PRIME)
+    return val, new_tour, ninf
+
+
+def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
+                      ranked_weights, budget, workers, worker_budget_sec):
+    """Batched parallel ILS for the neural loop. Allocates a fork pool ONCE,
+    dispatches `workers` perturb+VND jobs per batch, blocks for the slowest,
+    accepts the batch's best if it improves the shared best, repeats until
+    `budget.remaining() < worker_budget`.
+
+    Returns (best_tour, best_cost, total_inference_calls, batches, accepts).
+    """
+    global _W_XY, _W_IS_PRIME, _W_IS_PRIME_F32, _W_CANDIDATES, _W_RANKED_WEIGHTS
+    _W_XY = xy
+    _W_IS_PRIME = is_prime
+    _W_IS_PRIME_F32 = is_prime.astype(np.float32)
+    _W_CANDIDATES = candidates
+    _W_RANKED_WEIGHTS = ranked_weights
+
+    print(f"  running PARALLEL ILS "
+          f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s) ...")
+
+    rng = np.random.default_rng(0)
+    ctx = mp.get_context("fork")
+
+    batch_num = 0
+    total_iters = 0
+    total_inf = 0
+    accepts = 0
+
+    with ctx.Pool(processes=workers) as pool:
+        while not budget.expired():
+            if budget.remaining() < worker_budget_sec + 2.0:
+                break
+
+            args_list = [
+                (best_tour, int(rng.integers(0, 2**31 - 1)), worker_budget_sec)
+                for _ in range(workers)
+            ]
+            results = pool.map(_ils_worker_neural, args_list)
+            batch_num += 1
+            total_iters += len(results)
+            for _, _, ninf in results:
+                total_inf += ninf
+
+            cand_cost, cand_tour, _ = min(results, key=lambda r: r[0])
+            if cand_cost < best_cost:
+                best_cost = cand_cost
+                best_tour = cand_tour
+                accepts += 1
+                print(f"    batch {batch_num} (best of {workers}): "
+                      f"NEW BEST {best_cost:.2f}, "
+                      f"remaining {budget.remaining():.1f}s")
+
+    print(f"  ILS done: {batch_num} batches × {workers} workers = "
+          f"{total_iters} iters, {accepts} accepted batches")
+    return best_tour, best_cost, total_inf, batch_num, accepts
+
+
+# ---------------------------------------------------------------------------
 # Solver entry point
 # ---------------------------------------------------------------------------
 
@@ -573,52 +715,48 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         is_prime_f32 = is_prime.astype(np.float32)
         print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
-        MAX_VND_OUTER = 10
-        def vnd(t, p):
-            """Variable neighborhood descent: alternate learned 2-opt and
-            classical Or-opt until both find no improvement (or MAX_VND_OUTER
-            outer rounds — caps the initial converge so ILS restarts fit)."""
-            total_2opt_sweeps = 0
-            total_or_sweeps = 0
-            total_inf = 0
-            outer = 0
-            while not budget.expired() and outer < MAX_VND_OUTER:
-                outer += 1
-                s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
-                total_2opt_sweeps += s2
-                total_inf += ninf
-                if budget.expired():
-                    break
-                so = run_or_opt(t, p, xy, candidates, budget)
-                total_or_sweeps += so
-                if so <= 1 and outer > 1:
-                    break  # 2-opt also converged on prev iter; both done
-            return total_2opt_sweeps, total_or_sweeps, total_inf
-
-        s2, sor, ninf = vnd(tour, pos)
+        # Initial converge — always sequential (single tour, single core).
+        s2, sor, ninf = _vnd_local(
+            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
+            max_outer=10,
+        )
         inference_calls += ninf
         best_tour = tour.copy()
         best_cost = score_tour(best_tour, xy, is_prime)
         print(f"  initial converge: 2opt={s2}sw, or-opt={sor}sw, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
 
-        rng = np.random.default_rng(0)
-        while not budget.expired():
-            new_tour = best_tour.copy()
-            new_tour = double_bridge(new_tour, rng)
-            new_tour = double_bridge(new_tour, rng)
-            new_pos = np.empty(n, dtype=np.int64)
-            new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
-            s2, sor, ninf = vnd(new_tour, new_pos)
-            inference_calls += ninf
-            restarts += 1
-            new_cost = score_tour(new_tour, xy, is_prime)
-            if new_cost < best_cost:
-                print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f} ↓ ({best_cost - new_cost:+.2f})")
-                best_cost = new_cost
-                best_tour = new_tour.copy()
-            elif restarts <= 5 or restarts % 5 == 0:
-                print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f}")
-        print(f"  done: {restarts} restarts, best val_cost={best_cost:.2f}")
+        if ILS_WORKERS > 1:
+            best_tour, best_cost, ninf_par, batches, accepts = parallel_ils_loop(
+                best_tour, best_cost, xy, is_prime, candidates, ranked_weights,
+                budget,
+                workers=ILS_WORKERS, worker_budget_sec=ILS_WORKER_BUDGET,
+            )
+            inference_calls += ninf_par
+            # Report restarts as total worker iterations for backward compat
+            # with the metrics field.
+            restarts = batches * ILS_WORKERS
+        else:
+            rng = np.random.default_rng(0)
+            while not budget.expired():
+                new_tour = best_tour.copy()
+                new_tour = double_bridge(new_tour, rng)
+                new_tour = double_bridge(new_tour, rng)
+                new_pos = np.empty(n, dtype=np.int64)
+                new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
+                s2, sor, ninf = _vnd_local(
+                    new_tour, new_pos, xy, is_prime_f32, candidates,
+                    ranked_weights, budget, max_outer=10,
+                )
+                inference_calls += ninf
+                restarts += 1
+                new_cost = score_tour(new_tour, xy, is_prime)
+                if new_cost < best_cost:
+                    print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f} ↓ ({best_cost - new_cost:+.2f})")
+                    best_cost = new_cost
+                    best_tour = new_tour.copy()
+                elif restarts <= 5 or restarts % 5 == 0:
+                    print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f}")
+            print(f"  done: {restarts} restarts, best val_cost={best_cost:.2f}")
         return best_tour, inference_calls, restarts
     else:
         print("  running 2-opt ...")
