@@ -253,7 +253,9 @@ def _mlp_score(x, W1, b1, W2, b2, w3, b3_scalar, h1, h2):
 def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                          W1, b1, W2, b2, w3, b3_scalar, mu, sd):
     """2-opt sweep where candidates per ai are visited in descending MLP score
-    order. Best-improvement-in-K (one accept per ai per sweep)."""
+    order; first improving swap is taken (one accept per ai). Cycle-3 was
+    'try single best then give up'; this is the I5 variant — iterate by score
+    until improving or pool exhausted."""
     n = len(xy)
     K = candidates.shape[1]
     H = W1.shape[0]
@@ -264,6 +266,7 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
     h2 = np.empty(H, dtype=np.float32)
     scores = np.empty(K, dtype=np.float32)
     valid = np.empty(K, dtype=np.bool_)
+    used = np.empty(K, dtype=np.bool_)
 
     NEG_INF = np.float32(-1e30)
     n_imp = 0
@@ -307,44 +310,53 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
             valid[kk] = True
             n_inf += 1
 
-        # Pick best valid candidate by score.
-        best_kk = -1
-        best_score = NEG_INF
         for kk in range(K):
-            if valid[kk] and scores[kk] > best_score:
-                best_kk = kk
-                best_score = scores[kk]
-        if best_kk < 0:
-            continue
+            used[kk] = False
 
-        c = candidates[a, best_kk]
-        cj = pos[c]
-        if cj > ai + 1 and cj < n:
-            c_next = tour[cj + 1]
-            gain = d_a_anext + _euclid(xy, c, c_next) \
-                   - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
-            if gain > 1e-12:
-                lo, hi = ai + 1, cj
-                while lo < hi:
-                    x, y = tour[lo], tour[hi]
-                    tour[lo], tour[hi] = y, x
-                    pos[y], pos[x] = lo, hi
-                    lo += 1
-                    hi -= 1
-                n_imp += 1
-        elif cj >= 1 and cj < ai - 1:
-            c_next = tour[cj + 1]
-            gain = d_a_anext + _euclid(xy, c, c_next) \
-                   - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
-            if gain > 1e-12:
-                lo, hi = cj + 1, ai
-                while lo < hi:
-                    x, y = tour[lo], tour[hi]
-                    tour[lo], tour[hi] = y, x
-                    pos[y], pos[x] = lo, hi
-                    lo += 1
-                    hi -= 1
-                n_imp += 1
+        accepted = False
+        for slot in range(K):
+            if accepted:
+                break
+            best_kk = -1
+            best_score = NEG_INF
+            for kk in range(K):
+                if not used[kk] and valid[kk] and scores[kk] > best_score:
+                    best_kk = kk
+                    best_score = scores[kk]
+            if best_kk < 0:
+                break
+            used[best_kk] = True
+
+            c = candidates[a, best_kk]
+            cj = pos[c]
+            if cj > ai + 1 and cj < n:
+                c_next = tour[cj + 1]
+                gain = d_a_anext + _euclid(xy, c, c_next) \
+                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+                if gain > 1e-12:
+                    lo, hi = ai + 1, cj
+                    while lo < hi:
+                        x, y = tour[lo], tour[hi]
+                        tour[lo], tour[hi] = y, x
+                        pos[y], pos[x] = lo, hi
+                        lo += 1
+                        hi -= 1
+                    n_imp += 1
+                    accepted = True
+            elif cj >= 1 and cj < ai - 1:
+                c_next = tour[cj + 1]
+                gain = d_a_anext + _euclid(xy, c, c_next) \
+                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+                if gain > 1e-12:
+                    lo, hi = cj + 1, ai
+                    while lo < hi:
+                        x, y = tour[lo], tour[hi]
+                        tour[lo], tour[hi] = y, x
+                        pos[y], pos[x] = lo, hi
+                        lo += 1
+                        hi -= 1
+                    n_imp += 1
+                    accepted = True
     return n_imp, n_inf
 
 
