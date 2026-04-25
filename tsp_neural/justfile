@@ -58,9 +58,11 @@ meta DESCRIPTION:
     git add -A .claude/ ideas.md program.md justfile AGENTS.md
     git commit -m "meta: {{DESCRIPTION}}"
 
-# Drop the last commit.
+# Undo the last commit (use after a discarded experiment).
+# Creates a revert commit on top instead of rewriting history — safe
+# when sharing the branch with the tsp_heuristic loop.
 revert:
-    git reset --hard HEAD~1
+    git revert HEAD --no-edit
 
 # === Inspection ===========================================================
 

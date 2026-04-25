@@ -147,8 +147,12 @@ LOOP FOREVER:
    status and move on.
 7. `just log <commit> <val_cost> <solve_seconds> <status> <description>`
    — appends to `results.tsv` (not git-tracked).
-8. If `val_cost` improved, keep the commit (advances branch).
-9. If equal or worse, `just revert` (drops the commit).
+8. If `val_cost` improved, keep the commit (advances the log).
+9. If equal or worse, `just revert` — creates a *revert* commit on top
+   (does NOT rewrite history). The bad experiment stays in the log
+   followed by a `Revert "exp: ..."` commit; the working tree returns
+   to the prior state. This shape is safe when the `tsp_neural` loop
+   is committing to the same branch concurrently.
 10. **Check `.recap-pending`**: if it exists, run `/recap` before
     starting the next cycle. The `recap-writer` subagent updates the
     recap and clears the sentinel.

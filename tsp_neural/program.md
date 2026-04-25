@@ -138,7 +138,10 @@ Same shape as `tsp_heuristic/program.md`:
 4. `just exp "<desc>"` to commit.
 5. `just run` to execute.
 6. `just metrics`, `just log <args>`.
-7. Keep or `just revert`.
+7. Keep, or `just revert` to undo. Note: `just revert` creates a
+   *revert commit* on top (does not rewrite history) so it's safe even
+   when the `tsp_heuristic` loop is committing to the same branch
+   concurrently.
 8. Check `.recap-pending`; run `/recap` if present.
 
 ## Idea library (`ideas.md`)
