@@ -1,8 +1,12 @@
 
 # Beads / Dolt files (added by bd init)
+.beads/
 .dolt/
 *.db
 .beads-credential-key
+
+# Local agent guidance (not for the public repo)
+CLAUDE.md
 
 # Vendored upstream (its own git repo)
 autoresearch/
