@@ -55,7 +55,7 @@ CHECKPOINTS_DIR = Path(__file__).parent / "checkpoints"
 # Parallel ILS knobs (env-overridable so agents can revert or sweep).
 # ILS_WORKERS=1 → sequential ILS (legacy path).
 # ILS_WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
-ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 14))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
 # Module-level globals set by parallel_ils_loop before Pool fork — workers
