@@ -530,6 +530,15 @@ def solve(xy, is_prime, budget):
                   f"remaining {budget.remaining():.1f}s")
         else:
             no_improve += 1
+        if iters % 50 == 0 and not budget.expired():
+            pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
+            n_psp = prime_swap_pass(best_tour, pos, xy, is_prime, candidates)
+            if n_psp > 0:
+                new_best = score_tour(best_tour, xy, is_prime)
+                if new_best < best_cost:
+                    best_cost = new_best
+                    no_improve = 0
+                    print(f"    [iter {iters}] PERIODIC PRIME-SWAP: {n_psp} swaps, cost -> {best_cost:.2f}")
     print(f"  ILS done: {iters} iters, {accepts} improvements, {restarts} restarts")
 
     print("  running prime-swap post-pass ...")
