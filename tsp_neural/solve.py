@@ -347,7 +347,7 @@ def _prime_factor(p_one_indexed, origin_is_prime):
 
 @njit(cache=True, fastmath=True)
 def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
-                         W1, b1, W2, b2, w3, b3_scalar, mu, sd):
+                         W1, b1, W2, b2, w3, b3_scalar, mu, sd, eps):
     """2-opt sweep where candidates per ai are visited in descending MLP score
     order; first improving swap is taken (one accept per ai). Cycle-3 was
     'try single best then give up'; this is the I5 variant — iterate by score
@@ -355,7 +355,11 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
 
     Z1 (cycle 22): the accept-test uses *prime-aware* gain at the swap's two
     boundary edges (positions ai and cj). Interior 10th-step penalties from
-    the reversed segment are not yet accounted for."""
+    the reversed segment are not yet accounted for.
+
+    I4 (cycle 36): when eps>0, with probability eps pick a uniform random
+    valid+unused candidate at each slot instead of best-by-score. Diversifies
+    ILS restarts beyond pure double-bridge perturbation."""
     n = len(xy)
     K = candidates.shape[1]
     H = W1.shape[0]
@@ -419,10 +423,29 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                 break
             best_kk = -1
             best_score = NEG_INF
-            for kk in range(K):
-                if not used[kk] and valid[kk] and scores[kk] > best_score:
-                    best_kk = kk
-                    best_score = scores[kk]
+            if eps > 0.0 and np.random.random() < eps:
+                # ε-greedy: pick a uniform random unused valid candidate
+                n_avail = 0
+                for kk in range(K):
+                    if not used[kk] and valid[kk] and scores[kk] >= 0.0:
+                        n_avail += 1
+                if n_avail > 0:
+                    pick = int(np.random.random() * n_avail)
+                    if pick >= n_avail:
+                        pick = n_avail - 1
+                    seen = 0
+                    for kk in range(K):
+                        if not used[kk] and valid[kk] and scores[kk] >= 0.0:
+                            if seen == pick:
+                                best_kk = kk
+                                best_score = scores[kk]
+                                break
+                            seen += 1
+            if best_kk < 0:
+                for kk in range(K):
+                    if not used[kk] and valid[kk] and scores[kk] > best_score:
+                        best_kk = kk
+                        best_score = scores[kk]
             if best_kk < 0 or best_score < 0.0:
                 break
             used[best_kk] = True
@@ -473,14 +496,14 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
 
 
 def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
-                    weights, budget, max_sweeps=10_000):
+                    weights, budget, max_sweeps=10_000, eps=0.0):
     W1, b1, W2, b2, w3, b3_scalar, mu, sd = weights
     sweeps = 0
     total_inf = 0
     while sweeps < max_sweeps and not budget.expired():
         n_imp, n_inf = two_opt_sweep_ranked(
             tour, pos, xy, is_prime_f32, candidates,
-            W1, b1, W2, b2, w3, b3_scalar, mu, sd,
+            W1, b1, W2, b2, w3, b3_scalar, mu, sd, eps,
         )
         sweeps += 1
         total_inf += n_inf
@@ -574,17 +597,21 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
         MAX_VND_OUTER = 10
-        def vnd(t, p):
+        def vnd(t, p, eps=0.0):
             """Variable neighborhood descent: alternate learned 2-opt and
             classical Or-opt until both find no improvement (or MAX_VND_OUTER
-            outer rounds — caps the initial converge so ILS restarts fit)."""
+            outer rounds — caps the initial converge so ILS restarts fit).
+
+            eps>0 enables ε-greedy candidate sampling in 2-opt (I4: cycle 36).
+            Initial converge uses eps=0 (deterministic); ILS restarts use
+            eps>0 for diversification."""
             total_2opt_sweeps = 0
             total_or_sweeps = 0
             total_inf = 0
             outer = 0
             while not budget.expired() and outer < MAX_VND_OUTER:
                 outer += 1
-                s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
+                s2, ninf = run_2opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget, eps=eps)
                 total_2opt_sweeps += s2
                 total_inf += ninf
                 if budget.expired():
@@ -595,7 +622,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
                     break  # 2-opt also converged on prev iter; both done
             return total_2opt_sweeps, total_or_sweeps, total_inf
 
-        s2, sor, ninf = vnd(tour, pos)
+        s2, sor, ninf = vnd(tour, pos, eps=0.0)
         inference_calls += ninf
         best_tour = tour.copy()
         best_cost = score_tour(best_tour, xy, is_prime)
@@ -608,7 +635,7 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             new_tour = double_bridge(new_tour, rng)
             new_pos = np.empty(n, dtype=np.int64)
             new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
-            s2, sor, ninf = vnd(new_tour, new_pos)
+            s2, sor, ninf = vnd(new_tour, new_pos, eps=0.10)
             inference_calls += ninf
             restarts += 1
             new_cost = score_tour(new_tour, xy, is_prime)
