@@ -487,12 +487,12 @@ def solve(xy, is_prime, budget):
         else:
             cand = best_tour
             r = rng.random()
-            if r < 0.5:
-                cand = lns_perturb(cand, rng, xy, candidates, frac=0.010)
-            elif r < 0.75:
+            if r < 1.0 / 3.0:
                 cand = double_bridge(cand, rng)
-            else:
+            elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
+            else:
+                cand = lns_perturb(cand, rng, xy, candidates, frac=0.010)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
