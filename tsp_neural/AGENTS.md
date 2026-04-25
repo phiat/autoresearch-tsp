@@ -84,6 +84,10 @@ Inherited from `tsp_heuristic/` (same shape, different context):
   engineering). Use after every 3+ kept ideas across different
   classes, when stuck, or after `paper-researcher` adds building
   blocks.
+- **`chart-progress`** — regenerate `<repo-root>/progress.png`
+  (best `val_cost` over cycle index for both loops, with SOTA
+  reference line). Use after every recap-tick, after a notable new
+  best, or whenever the README chart looks stale.
 - **`evolve-tooling`** — modify `.claude/` itself.
 
 Project-specific:

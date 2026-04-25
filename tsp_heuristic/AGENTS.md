@@ -70,6 +70,10 @@ just metrics          # pull val_cost / solve_seconds from last run.log
   time the log shows ≥3 kept ideas across different classes (per the
   permute trigger in `program.md`), when stuck on a plateau, or
   after a `paper-researcher` run added building blocks.
+- **`chart-progress`** — regenerate `<repo-root>/progress.png`
+  (best `val_cost` over cycle index for both loops, with SOTA
+  reference line). Use after every recap-tick, after a notable new
+  best, or whenever the README chart looks stale.
 - **`evolve-tooling`** — modify `.claude/` itself (skills, subagents,
   hooks, slash commands) based on observed friction. Append-only on
   evidence. Use when a recurring chore could be automated, when an
