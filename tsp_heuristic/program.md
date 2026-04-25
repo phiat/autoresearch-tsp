@@ -153,6 +153,28 @@ d4e5f6g	0	0	crash	scipy KDTree call with bad k argument
 
 `results.tsv` is gitignored — local-only ledger.
 
+## Parallel ILS — known limit: within-batch staleness
+
+The PILS scaffold (commit `892f041`) dispatches K workers per batch
+sharing a single `best_tour` snapshot for the full `ILS_WORKER_BUDGET`
+seconds. Within a batch, worker improvements do NOT propagate — all K
+workers see the same stale seed for the entire 25 s. This is a real
+limitation.
+
+**Empirical finding** (recap-8, PILSw8 vs PILSw4): smaller batches
+mitigate the staleness penalty because each batch finishes faster and
+the shared best gets updated more often. The heuristic loop's default
+is `ILS_WORKERS=2` for this reason, not 8.
+
+**When tuning `ILS_WORKERS`**: think "how often does the shared best
+need to update?", not "how many cores can I fill?". Small K + frequent
+batch turnover beats large K + long batches on this workload.
+
+If you want true within-batch broadcast (workers reseed mid-batch
+when global best improves), it requires a `Manager.Value` shared
+state + poll points in `run_local` between sweeps. Not currently
+implemented; budget the work explicitly if proposing it.
+
 ## RNG noise floor and multi-seed evaluation
 
 The solver is rng-seed-dependent. Empirically (see recap-7, recap-8,

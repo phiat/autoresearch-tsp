@@ -118,6 +118,26 @@ Status: `keep` / `discard` / `crash`. Description should make the
 *learning aspect* explicit (e.g. "M3: train 2-layer MLP on harvested
 move features, integrate as candidate ranker").
 
+## Parallel ILS — known limit: within-batch staleness
+
+The PILS scaffold (commit `dd64693`) dispatches K workers per batch
+sharing a single `best_tour` snapshot for the full `ILS_WORKER_BUDGET`
+seconds. Within a batch, worker improvements do NOT propagate — all K
+workers see the same stale seed for the entire 25 s.
+
+**Empirical finding from neural cycles 39-45**: K=8 with budget=25s
+is the current sweet spot. K=14 over-contended (recap-3 row 40);
+K=15s budget too short (row 41); K=40s budget too long (row 42).
+
+**When tuning `ILS_WORKERS`**: think "how often does the shared best
+need to update?", not "how many cores can I fill?". Small K + frequent
+batch turnover beats large K + long batches.
+
+If you want true within-batch broadcast (workers reseed mid-batch
+when global best improves), it requires a `Manager.Value` shared
+state + poll points in `_vnd_local` between sweeps. Not currently
+implemented; budget the work explicitly if proposing it.
+
 ## RNG noise floor and multi-seed evaluation
 
 The solver is rng-seed-dependent. The neural loop's empirical noise
