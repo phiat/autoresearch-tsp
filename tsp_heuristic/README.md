@@ -13,7 +13,7 @@ mechanical helpers (subagents, skills, slash commands, hooks) and a
 
 ```
 prepare.py        — frozen: data loader, prime sieve, score_tour() metric
-solve.py          — agent's playground; baseline = nearest-neighbor
+solve.py          — the file the agent edits each cycle
 program.md        — agent operating rules
 AGENTS.md         — tooling inventory + decision table
 ideas.md          — seeded idea library + sample/grow protocol
@@ -25,7 +25,7 @@ pyproject.toml    — deps: numpy, pandas, sympy, scipy, numba
   agents/         — recap-writer, paper-researcher
   commands/       — /recap
   skills/         — postmortem, profile-solver, compare-runs,
-                    algo-blueprint, evolve-tooling
+                    algo-blueprint, permute-ideas, evolve-tooling
   hooks/          — block-frozen-edits, block-dep-install, recap-tick
   settings.json   — wires the hooks
 
@@ -83,11 +83,14 @@ modification.
 2. Edit `solve.py` minimally to implement it.
 3. `just exp "<desc>"` to commit, `just run` to execute.
 4. `just metrics` to extract `val_cost`, `just log` to append to ledger.
-5. Keep if improved; `just revert` if not.
+5. Keep if improved; `just revert` if not. (`just revert` uses
+   `git revert HEAD --no-edit` — safe when sharing `main` with the
+   `tsp_neural` loop.)
 6. Every 4 logged cycles, the `recap-tick` hook flags `.recap-pending`;
    the agent runs `/recap` to invoke the `recap-writer` subagent.
-7. Every 5 cycles, the agent appends 2-3 fresh ideas to `ideas.md` (or
-   invokes the `paper-researcher` subagent for literature-sourced ones).
+7. Every 5 cycles, the agent grows `ideas.md`. Self-generated ticks
+   alternate with mandatory `paper-researcher` invocations on a
+   rotating era schedule (classical → hybrid → domain-specific).
 8. Loop forever.
 
 See `AGENTS.md` for the full tooling inventory and "when to invoke what"

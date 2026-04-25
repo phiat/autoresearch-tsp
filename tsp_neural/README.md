@@ -14,54 +14,58 @@ candidate moves* better than the geographic k-NN heuristic does.
 
 ```
 prepare.py        — frozen: same as tsp_heuristic/ (load_cities, score_tour)
-solve.py          — agent's playground; baseline = NN + 2-opt(k=10), no learning
+solve.py          — the file the agent edits each cycle (loads a learned
+                    scorer if available; falls back to geographic baseline)
 program.md        — agent operating rules, neural-augmentation focus
 ideas.md          — seeded ideas in M/T/R/I/E/C classes
 AGENTS.md         — tooling inventory + decision table
 justfile          — common shell recipes (run, train, harvest, …)
 pyproject.toml    — deps: numpy, pandas, sympy, scipy, numba, torch
 
+.claude/
+  agents/         — recap-writer, paper-researcher
+  commands/       — /recap
+  skills/         — postmortem, profile-solver, compare-runs,
+                    algo-blueprint, train-policy, permute-ideas,
+                    evolve-tooling
+  hooks/          — block-frozen-edits, block-dep-install, recap-tick
+  settings.json   — wires the hooks
+
 data/             — symlink to ../tsp_heuristic/data/ (shared)
 moves/            — harvested move logs (gitignored)
 checkpoints/      — saved model weights (gitignored)
 submissions/      — solver output (gitignored)
 results.tsv       — local experiment ledger (gitignored)
-.claude/          — subagents, skills, slash commands, hooks
 ```
 
 ## Quick start
 
 ```bash
-# 1. Make sure ../tsp_heuristic/data/cities.csv exists (the symlink resolves there)
+# 1. ../tsp_heuristic/data/cities.csv must exist (the symlink resolves there)
 # 2. Sync deps (this downloads PyTorch — several GB, one-time)
-uv sync
-
-# 3. Smoke test
-just data
-just run
-just metrics
+uv sync && just data && just run     # smoke test
 ```
 
-Baseline `val_cost` will be roughly **1.55-1.6M** — worse than
-`tsp_heuristic/`'s current best because the baseline here intentionally
-*lacks* Or-opt / ILS / prime-aware moves. Those are not the
-differentiator. The agent's job is to introduce learning, not to
-re-build the classical pipeline.
+The starting baseline (no learning) lands ~1.55–1.6M `val_cost`. The
+agent's job is to add learning on top — see `program.md` and the
+`train-policy` skill for the harvest → train → integrate workflow.
 
 ## Common commands
 
 ```bash
 just                  # list all recipes
-just status           # branch, head, last result, recap-pending
+just status           # head, last result, recap-pending
 just run              # one experiment (5-min budget)
 just metrics          # extract val_cost from run.log
 just ledger           # pretty-print results.tsv
-just exp "<desc>"     # commit experiment with exp: prefix
-just log <args>       # append a row to results.tsv
-just revert           # discard last commit
-just train            # convenience: launch a training-only run (see justfile)
-just harvest          # run solve.py with move-logging enabled
-just tools            # list .claude/ subagents/skills/commands/hooks
+just exp "<desc>"     # commit experiment
+just revert           # undo last commit (creates revert commit; safe
+                      # for shared-main with the tsp_heuristic loop)
+just harvest          # solve.py with move-logging enabled
+just train            # training-only run (no solve)
+just checkpoints      # list saved model weights
+just moves            # list harvested move logs
+just tools            # list .claude/ inventory
 ```
 
 ## How this differs from tsp_heuristic/

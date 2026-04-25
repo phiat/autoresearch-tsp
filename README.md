@@ -19,7 +19,7 @@ and the [marimo walkthrough video](https://www.youtube.com/watch?v=bMoNOb0iXpA).
 | **Trains a model?** | **no** — pure numpy/numba/scipy       | **yes** — small PyTorch model per cycle        |
 | **What's optimised** | a permutation of 197,769 ints (the tour) | a tour, *plus* the move-scorer that helps build it |
 | **Deps**         | numpy, pandas, sympy, scipy, numba       | + `torch`                                      |
-| **Pipeline today** | NN seed → 2-opt → Or-opt → ILS → prime polish | NN seed → 2-opt (baseline; agent adds learning from cycle 1) |
+| **Pipeline shape** | construction → local search → perturbation → polish (agent mutates every cycle) | construction → local search guided by a learned model (agent mutates every cycle) |
 | **Risk**         | low; classical literature is deep        | high; learned/classical glue is fiddly         |
 
 Both share `prepare.py` (the metric is bit-identical) and the same
@@ -34,8 +34,8 @@ loop's operating rules.
 ## Layout
 
 ```
-tsp_heuristic/    classical loop (matured pipeline; current best ~1.548M)
-tsp_neural/       neural-guided loop (scaffolded; first cycle TBD)
+tsp_heuristic/    classical loop
+tsp_neural/       neural-guided loop
 autoresearch/     vendored upstream (karpathy's repo, reference only)
 AGENTS.md         agent guidance for the outer repo
 ```
@@ -51,20 +51,17 @@ other's commits.
 
 ```bash
 # tsp_heuristic — first Claude Code session
-cd /home/phiat/lab/apr/auto-rez/tsp_heuristic
-uv sync && just data && just run        # smoke test
+cd tsp_heuristic && uv sync && just data && just run    # smoke test
 # point a Claude Code session here, follow program.md
 
-# tsp_neural — second Claude Code session
-cd /home/phiat/lab/apr/auto-rez/tsp_neural
-uv sync && just data && just run        # smoke test (downloads PyTorch first time)
+# tsp_neural — second Claude Code session (downloads PyTorch first time)
+cd tsp_neural && uv sync && just data && just run       # smoke test
 # point a *separate* Claude Code session here, follow its program.md
 ```
 
 Two sessions, two subdirs, one branch (`main`), one working tree.
-Their commits will interleave in `git log`. Use `compare-runs` across
-the two paradigms once both have rows in their respective
-`results.tsv` (per-subdir, gitignored).
+Their commits will interleave in `git log`. `results.tsv`,
+`run.log`, `submissions/` etc. are per-subdir and gitignored.
 
 ## Status
 
