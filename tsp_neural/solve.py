@@ -173,13 +173,18 @@ def run_2opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
 
 
 @njit(cache=True, fastmath=True)
-def or_opt_sweep(tour, pos, xy, candidates):
+def or_opt_sweep(tour, pos, xy, is_prime_f32, candidates):
     """Or-opt single-city relocation sweep. For each city x, try inserting it
     before each of its k-NN candidates; accept first improvement.
 
     Edges removed: (prev,x), (x,next), (c_prev,c)
     Edges added:   (prev,next), (c_prev,x), (x,c)
-    Gain = sum(removed) - sum(added).
+
+    C15 (cycle 47): prime-aware boundary gain at the 6 affected edges. Mirror
+    of cycle-22 Z1 for 2-opt — accept-test uses pf(step, origin)*length so
+    accepts align with score_tour. Interior step shifts (cities between xi
+    and cj move ±1 position) are NOT accounted for; Z2-style interior was
+    over-rejecting for 2-opt, so boundary-only is the proven shape.
 
     Returns number of accepted moves."""
     n = len(xy)
@@ -192,9 +197,14 @@ def or_opt_sweep(tour, pos, xy, candidates):
         d_prev_x = _euclid(xy, prev, x)
         d_x_next = _euclid(xy, x, nxt)
         d_prev_next = _euclid(xy, prev, nxt)
+        # Quick Euclidean reject — if removing x doesn't shorten by enough to
+        # plausibly gain anywhere, skip the K-loop (fast path).
         rem_gain = d_prev_x + d_x_next - d_prev_next
         if rem_gain <= 1e-12:
             continue
+        pf_xi_prev = _prime_factor(xi, is_prime_f32[prev])
+        pf_xi1_x = _prime_factor(xi + 1, is_prime_f32[x])
+        pf_xi_prev_new = _prime_factor(xi, is_prime_f32[prev])  # (prev,nxt) at step xi
         for kk in range(K):
             c = candidates[x, kk]
             if c == 0 or c == prev or c == nxt:
@@ -208,8 +218,28 @@ def or_opt_sweep(tour, pos, xy, candidates):
             d_cprev_c = _euclid(xy, c_prev, c)
             d_cprev_x = _euclid(xy, c_prev, x)
             d_x_c = _euclid(xy, x, c)
-            ins_gain = d_cprev_c - d_cprev_x - d_x_c
-            total = rem_gain + ins_gain
+            pf_cj_cprev = _prime_factor(cj, is_prime_f32[c_prev])
+            if xi < cj:
+                # Insert x before c (at new pos cj-1); segment [xi+1..cj-1] shifts left by 1.
+                # Removed edges: (prev,x) step xi, (x,nxt) step xi+1, (c_prev,c) step cj.
+                # Added edges:   (prev,nxt) step xi, (c_prev,x) step cj-1, (x,c) step cj.
+                rem = (pf_xi_prev * d_prev_x
+                       + pf_xi1_x * d_x_next
+                       + pf_cj_cprev * d_cprev_c)
+                add = (pf_xi_prev_new * d_prev_next
+                       + _prime_factor(cj - 1, is_prime_f32[c_prev]) * d_cprev_x
+                       + _prime_factor(cj, is_prime_f32[x]) * d_x_c)
+            else:
+                # xi > cj: segment [cj..xi-1] shifts right by 1; x lands at cj.
+                # Removed edges: (prev,x) step xi, (x,nxt) step xi+1, (c_prev,c) step cj.
+                # Added edges:   (c_prev,x) step cj, (x,c) step cj+1, (prev,nxt) step xi+1.
+                rem = (pf_xi_prev * d_prev_x
+                       + pf_xi1_x * d_x_next
+                       + pf_cj_cprev * d_cprev_c)
+                add = (pf_cj_cprev * d_cprev_x
+                       + _prime_factor(cj + 1, is_prime_f32[x]) * d_x_c
+                       + _prime_factor(xi + 1, is_prime_f32[prev]) * d_prev_next)
+            total = rem - add
             if total > 1e-12:
                 if xi < cj:
                     for i in range(xi, cj - 1):
@@ -228,10 +258,10 @@ def or_opt_sweep(tour, pos, xy, candidates):
     return n_imp
 
 
-def run_or_opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
+def run_or_opt(tour, pos, xy, is_prime_f32, candidates, budget, max_sweeps=10_000):
     sweeps = 0
     while sweeps < max_sweeps and not budget.expired():
-        n_imp = or_opt_sweep(tour, pos, xy, candidates)
+        n_imp = or_opt_sweep(tour, pos, xy, is_prime_f32, candidates)
         sweeps += 1
         if n_imp == 0:
             break
@@ -566,7 +596,7 @@ def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
         total_inf += ninf
         if budget.expired():
             break
-        so = run_or_opt(t, p, xy, candidates, budget)
+        so = run_or_opt(t, p, xy, is_prime_f32, candidates, budget)
         total_or_sweeps += so
         if so <= 1 and outer > 1:
             break  # 2-opt also converged on prev iter; both done
