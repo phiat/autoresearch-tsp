@@ -1,6 +1,6 @@
 # tsp_neural
 
-Sibling to `tsp_research/`. Same Santa 2018 TSP, same metric, same
+Sibling to `tsp_heuristic/`. Same Santa 2018 TSP, same metric, same
 5-min budget, same keep-or-revert loop. **Different lever**: instead
 of hand-designing better classical heuristics, the agent trains a
 small neural network whose job is to *guide the local-search inner
@@ -13,12 +13,12 @@ network's role is to score candidate moves better than the
 geographic k-NN heuristic does.
 
 If you find yourself implementing the same purely-classical ideas
-that `tsp_research/` already explored, **stop** — that's a different
+that `tsp_heuristic/` already explored, **stop** — that's a different
 project. The differentiator here is *learning*.
 
 ## Setup
 
-This loop is designed to **run in parallel with `tsp_research/`** in
+This loop is designed to **run in parallel with `tsp_heuristic/`** in
 a separate **git worktree** so the two loops don't fight over `HEAD`.
 
 1. **Agree on a run tag**: `neural/<tag>` (e.g. `neural/apr25-b2`).
@@ -33,17 +33,17 @@ a separate **git worktree** so the two loops don't fight over `HEAD`.
 
    This creates a sibling working tree at `../auto-rez-neural/`
    checked out to a brand-new `neural/<tag>` branch based on `main`.
-   The original working tree (where `tsp_research/` runs on
-   `tsp/<tag>`) is untouched. Both loops can now run simultaneously.
+   The original working tree (where `tsp_heuristic/` runs on
+   `heuristic/<tag>`) is untouched. Both loops can now run simultaneously.
 3. **Read the in-scope files**:
    - `README.md`, `AGENTS.md` — project context + tooling inventory.
    - `prepare.py` — frozen data loader + `score_tour` (same as
-     `tsp_research/`). Do not modify.
+     `tsp_heuristic/`). Do not modify.
    - `solve.py` — the file you modify. Baseline = NN + 2-opt with
      k-NN candidates. **No learning yet.**
 4. **Verify env**: `uv sync` (downloads PyTorch — several GB; one-time).
 5. **Smoke test**: `just data` and `just run`. Baseline val_cost should
-   be in the ~1.55-1.6M range (worse than `tsp_research/`'s current
+   be in the ~1.55-1.6M range (worse than `tsp_heuristic/`'s current
    best because no Or-opt / no ILS yet — that's intentional).
 6. **Initialize `results.tsv`**: header row only.
 7. **Confirm setup looks good**, then start the loop.
@@ -87,12 +87,12 @@ After that, the agent samples from `ideas.md` per the standard loop.
 - Train for hours. The 5-min budget is wall-clock total per cycle;
   if the model takes 4 min to train, you have 1 min to apply it and
   measure. Plan accordingly.
-- Try to beat `tsp_research/` by re-implementing classical Or-opt /
+- Try to beat `tsp_heuristic/` by re-implementing classical Or-opt /
   ILS without any learned component. That's the wrong project.
 
 ## The metric
 
-Same as `tsp_research/`: `val_cost` from `prepare.score_tour(tour)`.
+Same as `tsp_heuristic/`: `val_cost` from `prepare.score_tour(tour)`.
 **The official Santa 2018 cost.** Lower is better. The 1.1× prime
 penalty applies. The model is a *means*; the tour is the artefact;
 val_cost is the truth.
@@ -130,7 +130,7 @@ move features, integrate as candidate ranker").
 
 ## The loop
 
-Same shape as `tsp_research/program.md`:
+Same shape as `tsp_heuristic/program.md`:
 
 1. `just status` — branch, head, last result, recap-pending.
 2. Pick an idea from `ideas.md` (sampling protocol below).
@@ -156,12 +156,12 @@ Idea classes specific to this project:
 - **C** (combination): pipelines that combine learned and classical.
 
 Use these prefixes when adding ideas. Same sample/grow protocol as
-`tsp_research/` — sample uniformly from untried, append 2-3 fresh
+`tsp_heuristic/` — sample uniformly from untried, append 2-3 fresh
 ideas every 5 cycles, append-only.
 
 ## NEVER STOP
 
-Same rule as `tsp_research/`. Once the loop starts, iterate until the
+Same rule as `tsp_heuristic/`. Once the loop starts, iterate until the
 human interrupts. Out of ideas? Re-read `ideas.md`, invoke the
 `postmortem` skill, invoke `paper-researcher` with a topic like
 "learned 2-opt move ranker" or "graph neural network candidate edge

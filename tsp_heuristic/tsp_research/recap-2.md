@@ -1,4 +1,4 @@
-# Recap 2 — `tsp/apr25` continued
+# Recap 2 — `heuristic/apr25` continued
 
 Continuation of `recap-1.md`. New cycles since: #8 (H1, discarded —
 first revert) and #9 (O4r, new best). #10 in flight. The agent has now
@@ -109,7 +109,7 @@ Promotions/demotions after #10–#12:
 
 ## State
 
-- Branch: `tsp/apr25` @ `823017c` (run #13 in flight).
+- Branch: `heuristic/apr25` @ `823017c` (run #13 in flight).
 - Last *kept* commit: `ee01598` (Or-opt L=4,5, val 1,549,603.33).
 - 12 logged rows in `results.tsv` (10 keeps, 2 discards).
 - `ideas.md`: 33 items; cycle-2 append still pending.

@@ -1,7 +1,7 @@
 [project]
 name = "tsp-neural"
 version = "0.1.0"
-description = "Neural-guided local search for the Kaggle Santa 2018 TSP — sibling to tsp_research/."
+description = "Neural-guided local search for the Kaggle Santa 2018 TSP — sibling to tsp_heuristic/."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

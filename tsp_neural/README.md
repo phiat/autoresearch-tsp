@@ -1,6 +1,6 @@
 # tsp_neural
 
-Sibling to `tsp_research/` — same Santa 2018 TSP, same metric, same
+Sibling to `tsp_heuristic/` — same Santa 2018 TSP, same metric, same
 5-min budget, but the agent's lever is **training a small neural
 network to guide the local-search inner loops**, not hand-designing
 classical heuristics.
@@ -13,7 +13,7 @@ candidate moves* better than the geographic k-NN heuristic does.
 ## Files
 
 ```
-prepare.py        — frozen: same as tsp_research/ (load_cities, score_tour)
+prepare.py        — frozen: same as tsp_heuristic/ (load_cities, score_tour)
 solve.py          — agent's playground; baseline = NN + 2-opt(k=10), no learning
 program.md        — agent operating rules, neural-augmentation focus
 ideas.md          — seeded ideas in M/T/R/I/E/C classes
@@ -21,7 +21,7 @@ AGENTS.md         — tooling inventory + decision table
 justfile          — common shell recipes (run, train, harvest, …)
 pyproject.toml    — deps: numpy, pandas, sympy, scipy, numba, torch
 
-data/             — symlink to ../tsp_research/data/ (shared)
+data/             — symlink to ../tsp_heuristic/data/ (shared)
 moves/            — harvested move logs (gitignored)
 checkpoints/      — saved model weights (gitignored)
 submissions/      — solver output (gitignored)
@@ -32,7 +32,7 @@ results.tsv       — local experiment ledger (gitignored)
 ## Quick start
 
 ```bash
-# 1. Make sure ../tsp_research/data/cities.csv exists (the symlink resolves there)
+# 1. Make sure ../tsp_heuristic/data/cities.csv exists (the symlink resolves there)
 # 2. Sync deps (this downloads PyTorch — several GB, one-time)
 uv sync
 
@@ -43,7 +43,7 @@ just metrics
 ```
 
 Baseline `val_cost` will be roughly **1.55-1.6M** — worse than
-`tsp_research/`'s current best because the baseline here intentionally
+`tsp_heuristic/`'s current best because the baseline here intentionally
 *lacks* Or-opt / ILS / prime-aware moves. Those are not the
 differentiator. The agent's job is to introduce learning, not to
 re-build the classical pipeline.
@@ -64,9 +64,9 @@ just harvest          # run solve.py with move-logging enabled
 just tools            # list .claude/ subagents/skills/commands/hooks
 ```
 
-## How this differs from tsp_research/
+## How this differs from tsp_heuristic/
 
-|                  | `tsp_research/`              | `tsp_neural/`                 |
+|                  | `tsp_heuristic/`              | `tsp_neural/`                 |
 |------------------|------------------------------|-------------------------------|
 | Approach         | classical heuristic search   | neural-guided local search    |
 | Has a model?     | no                           | yes (small, trained per cycle)|
@@ -82,7 +82,7 @@ on the same submission.
 
 ## Provenance
 
-Inspired by the same lineage as `tsp_research/` —
+Inspired by the same lineage as `tsp_heuristic/` —
 [karpathy/autoresearch](https://github.com/karpathy/autoresearch),
 the [Kaggle Santa 2018](https://www.kaggle.com/competitions/traveling-santa-2018-prime-paths/),
 and the marimo walkthrough video.

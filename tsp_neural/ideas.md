@@ -1,7 +1,7 @@
 # Idea Library — tsp_neural
 
 Pool of experiment ideas for the **neural-guided** loop. Same sample
-& grow protocol as `tsp_research/ideas.md`.
+& grow protocol as `tsp_heuristic/ideas.md`.
 
 ## Sampling protocol
 

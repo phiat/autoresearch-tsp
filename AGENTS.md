@@ -2,10 +2,10 @@
 
 ## Sub-projects
 
-- **`tsp_research/`** — autonomous research loop for the Kaggle Santa
+- **`tsp_heuristic/`** — autonomous research loop for the Kaggle Santa
   2018 TSP. Has its own `AGENTS.md`, `program.md`, and a `.claude/`
   with skills, subagents, slash commands, and hooks. If you're
-  driving the loop, work from inside `tsp_research/` and read its
+  driving the loop, work from inside `tsp_heuristic/` and read its
   `AGENTS.md` first.
 - **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
   its own git repo. Reference only; do not modify.
@@ -13,7 +13,7 @@
 ## Working alongside a live loop session
 
 There is often a separate Claude Code session running the autonomous
-loop in `tsp_research/` on branch `tsp/<tag>`. It uses the same
+loop in `tsp_heuristic/` on branch `heuristic/<tag>`. It uses the same
 working tree as you. Disrupting its view of git state confuses it.
 
 **Rules when the loop is live:**
@@ -38,9 +38,9 @@ working tree as you. Disrupting its view of git state confuses it.
   session explaining what happened (e.g. *"that commit on main is
   yours — meta: chore, safe to merge or ignore"*). Don't reach into
   the loop's branch from outside.
-- **Editing files outside `tsp_research/`** is generally safe; the
+- **Editing files outside `tsp_heuristic/`** is generally safe; the
   loop only watches git and its own working dir. But edits inside
-  `tsp_research/` can show up in the loop's `git status` and look
+  `tsp_heuristic/` can show up in the loop's `git status` and look
   like uncommitted experiment changes — avoid unless coordinating.
 
 Lesson learned the hard way during the apr25 session: a switch to

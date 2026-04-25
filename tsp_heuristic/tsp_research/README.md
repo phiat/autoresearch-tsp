@@ -1,4 +1,4 @@
-# tsp_research
+# tsp_heuristic
 
 Autoresearch-style harness for the [Kaggle Traveling Santa 2018 Prime Paths](https://www.kaggle.com/competitions/traveling-santa-2018-prime-paths/overview) challenge.
 

@@ -12,7 +12,7 @@ and the [marimo walkthrough video](https://www.youtube.com/watch?v=bMoNOb0iXpA).
 
 ## The two projects
 
-|                  | [`tsp_research/`](tsp_research/)        | [`tsp_neural/`](tsp_neural/)                  |
+|                  | [`tsp_heuristic/`](tsp_heuristic/)        | [`tsp_neural/`](tsp_neural/)                  |
 |------------------|------------------------------------------|------------------------------------------------|
 | **Approach**     | classical heuristic search               | neural-guided local search                     |
 | **Lever**        | algorithm design                         | model design + integration                     |
@@ -34,7 +34,7 @@ loop's operating rules.
 ## Layout
 
 ```
-tsp_research/      classical loop (live; producing real results)
+tsp_heuristic/      classical loop (live; producing real results)
 tsp_neural/        neural-guided loop (scaffolded; first cycle TBD)
 autoresearch/      vendored upstream (karpathy's repo, reference only)
 .beads/            beads issue tracker (project memory; gitignored)
@@ -49,10 +49,10 @@ its own checked-out branch and independent file state, sharing the
 underlying `.git/`.
 
 ```bash
-# tsp_research — runs in this working tree
+# tsp_heuristic — runs in this working tree
 cd /home/phiat/lab/apr/auto-rez
-git checkout -b tsp/<tag> main          # one-time
-cd tsp_research/
+git checkout -b heuristic/<tag> main          # one-time
+cd tsp_heuristic/
 uv sync && just data && just run        # smoke test
 # point a Claude Code session here, follow program.md
 
@@ -69,11 +69,11 @@ data); `results.tsv` and other artefacts are per-worktree-local.
 
 ## Status
 
-- **`tsp_research/`** — actively iterating on branch `tsp/apr25`.
+- **`tsp_heuristic/`** — actively iterating on branch `heuristic/apr25`.
   The pipeline has matured into NN → 2-opt + Or-opt(1,2,3) → ILS with
   adaptive double-bridge / segment-shift → prime-aware swap polish.
   Best `val_cost` so far is in the **~1.548M** range (~14.6% off the
-  identity-tour baseline). Recap series in `tsp_research/recap-*.md`.
+  identity-tour baseline). Recap series in `tsp_heuristic/recap-*.md`.
 - **`tsp_neural/`** — scaffolded, no cycles run yet. Baseline
   (NN + 2-opt only, no learning) will land in the 1.55-1.6M range
   once first run; the agent's job from cycle 1 is to introduce

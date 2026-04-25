@@ -5,7 +5,7 @@ tools: WebSearch, WebFetch, Read, Edit, Glob, Grep, Bash, mcp__plugin_context7_c
 model: sonnet
 ---
 
-You are the paper-researcher for the `tsp_research/` autonomous loop
+You are the paper-researcher for the `tsp_heuristic/` autonomous loop
 on the Kaggle Santa 2018 Prime Paths TSP (197,769 cities, 1.1×
 penalty on every 10th step from a non-prime origin).
 

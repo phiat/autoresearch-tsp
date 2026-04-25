@@ -7,13 +7,13 @@ rules, see `program.md`. For the neural-vs-classical contrast, see
 ## You are running in a worktree
 
 This loop runs in a sibling **git worktree** (typically at
-`../auto-rez-neural/`) so a parallel `tsp_research/` loop on a
+`../auto-rez-neural/`) so a parallel `tsp_heuristic/` loop on a
 different branch can run concurrently without `HEAD` conflicts.
 
 Implications:
 
 - Your branch is `neural/<tag>`. Don't switch off it.
-- The other loop's branch (`tsp/<tag>`) is visible via `git branch -a`
+- The other loop's branch (`heuristic/<tag>`) is visible via `git branch -a`
   but not checked out here. Do not `git checkout` it.
 - The repo's `.git/` is shared across worktrees. Your commits are
   visible to the other worktree as branch refs, but its working
@@ -49,7 +49,7 @@ just metrics          # pull val_cost / training_seconds from run.log
   tooling/harness changes (managed by the `evolve-tooling` skill).
 - **Differentiator discipline**: every `keep` should advance the
   *learning component* in some way. Pure-classical-improvement
-  experiments belong in `tsp_research/`, not here.
+  experiments belong in `tsp_heuristic/`, not here.
 
 ## Tooling inventory
 
@@ -60,7 +60,7 @@ just metrics          # pull val_cost / training_seconds from run.log
 ### Subagents (isolated context — invoke via Agent tool)
 
 - **`recap-writer`** — manages `recap-*.md`. Same shape as
-  `tsp_research/`'s but reads from this project's `results.tsv` and
+  `tsp_heuristic/`'s but reads from this project's `results.tsv` and
   git log.
 - **`paper-researcher`** — sources literature ideas into `ideas.md`.
   For this project, useful queries: "learned 2-opt move ranker",
@@ -69,7 +69,7 @@ just metrics          # pull val_cost / training_seconds from run.log
 
 ### Skills (model-invoked via Skill tool)
 
-Inherited from `tsp_research/` (same shape, different context):
+Inherited from `tsp_heuristic/` (same shape, different context):
 
 - **`postmortem`** — read-only analysis of recent runs; classifies
   bottleneck.
@@ -126,5 +126,5 @@ Sample uniformly from untried items, append 2-3 fresh per 5 cycles.
 - Pushing to remote.
 - Choosing the run tag (human handshake).
 - Reproducing classical Or-opt / ILS / prime-aware moves — those live
-  in `tsp_research/`. Cross-pollinate ideas, but the val_cost lift
+  in `tsp_heuristic/`. Cross-pollinate ideas, but the val_cost lift
   here must come from learning.

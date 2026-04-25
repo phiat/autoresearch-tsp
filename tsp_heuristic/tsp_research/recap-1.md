@@ -1,7 +1,7 @@
-# Recap 1 — `tsp/apr25` first session
+# Recap 1 — `heuristic/apr25` first session
 
 Snapshot of the autonomous loop on the Kaggle Santa 2018 TSP, branch
-`tsp/apr25`. Captures what was built, what's been tried, what worked,
+`heuristic/apr25`. Captures what was built, what's been tried, what worked,
 and what's queued.
 
 ## Setup
@@ -19,7 +19,7 @@ and what's queued.
   - `results.tsv` — append-only ledger of runs (gitignored).
 - **Allowed deps**: numpy, pandas, sympy, scipy, numba.
 - **Loop mode**: mirror karpathy — separate Claude session in
-  `tsp_research/` driving `program.md`. No external scheduler.
+  `tsp_heuristic/` driving `program.md`. No external scheduler.
 - **Hardware**: RTX 4070 16GB, but no GPU work yet — all CPU/numba.
 
 ## Loop, in one screen
@@ -136,7 +136,7 @@ growth tick fires after run 10 (currently between #7 and #8).
 
 ## Files / state
 
-- Branch: `tsp/apr25` @ `2d92b5c` (latest commit; run #8 H1 in flight).
+- Branch: `heuristic/apr25` @ `2d92b5c` (latest commit; run #8 H1 in flight).
 - Last *kept* commit: `f345bbd` (Z1 prime post-pass, val 1,553,408.50).
 - `submissions/submission.csv` — current best tour, ready for Kaggle.
 - `results.tsv` — 7 logged rows + header. Local only.
