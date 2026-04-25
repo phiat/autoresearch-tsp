@@ -78,13 +78,8 @@ def _euclid(xy, a, b):
 
 @njit(cache=True, fastmath=True)
 def two_opt_sweep(tour, pos, xy, candidates):
-    """One greedy first-improvement pass; returns number of improvements applied.
-
-    For each city a at position ai, scans a's k nearest neighbours c and tries the
-    2-opt that introduces edge (a, c). Two cases depending on whether c sits later
-    or earlier in the tour — both produce the same gain formula but reverse a
-    different sub-segment.
-    """
+    """One best-improvement pass. For each city a, scans all candidates and applies
+    only the single highest-gain move (across both case A and case B)."""
     n = len(xy)
     K = candidates.shape[1]
     n_improvements = 0
@@ -92,59 +87,54 @@ def two_opt_sweep(tour, pos, xy, candidates):
         a = tour[ai]
         a_next = tour[ai + 1]
         d_a_anext = _euclid(xy, a, a_next)
+        best_gain = 1e-12
+        best_kk = -1
+        best_case = 0  # 1 = case A (cj > ai+1), 2 = case B (cj < ai-1)
         for kk in range(K):
             c = candidates[a, kk]
             if c == 0:
                 continue
             cj = pos[c]
-            # Case A: c is later in the tour (cj > ai+1). Move = reverse tour[ai+1..cj].
-            # Case B: c is earlier in the tour (cj < ai-1). Move = reverse tour[cj+1..ai].
             if cj > ai + 1 and cj < n:
                 c_next = tour[cj + 1]
                 d_a_c = _euclid(xy, a, c)
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
                 gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
-                if gain > 1e-12:
-                    lo = ai + 1
-                    hi = cj
-                    while lo < hi:
-                        x = tour[lo]
-                        y = tour[hi]
-                        tour[lo] = y
-                        tour[hi] = x
-                        pos[y] = lo
-                        pos[x] = hi
-                        lo += 1
-                        hi -= 1
-                    n_improvements += 1
-                    a_next = tour[ai + 1]
-                    d_a_anext = _euclid(xy, a, a_next)
-                    continue
+                if gain > best_gain:
+                    best_gain = gain
+                    best_kk = kk
+                    best_case = 1
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
                 d_a_c = _euclid(xy, a, c)
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
                 gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
-                if gain > 1e-12:
-                    lo = cj + 1
-                    hi = ai
-                    while lo < hi:
-                        x = tour[lo]
-                        y = tour[hi]
-                        tour[lo] = y
-                        tour[hi] = x
-                        pos[y] = lo
-                        pos[x] = hi
-                        lo += 1
-                        hi -= 1
-                    n_improvements += 1
-                    # `a` itself moved (it's now at position cj+1). Re-fetch from current ai.
-                    a = tour[ai]
-                    a_next = tour[ai + 1]
-                    d_a_anext = _euclid(xy, a, a_next)
-                    continue
+                if gain > best_gain:
+                    best_gain = gain
+                    best_kk = kk
+                    best_case = 2
+        if best_kk < 0:
+            continue
+        c = candidates[a, best_kk]
+        cj = pos[c]
+        if best_case == 1:
+            lo = ai + 1
+            hi = cj
+        else:
+            lo = cj + 1
+            hi = ai
+        while lo < hi:
+            x = tour[lo]
+            y = tour[hi]
+            tour[lo] = y
+            tour[hi] = x
+            pos[y] = lo
+            pos[x] = hi
+            lo += 1
+            hi -= 1
+        n_improvements += 1
     return n_improvements
 
 
