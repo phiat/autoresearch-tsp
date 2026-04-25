@@ -133,3 +133,46 @@ Catalogue: 9 keeps across M (1) / T (5) / R (2) / I (2) / Z (1) / C (1). Enginee
 - C10. **R5 prime-aware aux loss + retrain on existing T7 data**: weighted-BCE training with 1.1x weight on candidates whose ai+1 or cj+1 is a 10th-step. Same architecture, sharper learning signal at exactly the boundary cases Z1 already optimises. Single-cycle train + run; if AUC at 10th-step subsamples improves, the model picks better candidates there.
 - C11. **I2 threshold τ + I5 + Z1**: skip ranked candidates with model logit < 0 entirely (model said "won't accept"). Saves the prime-aware boundary check on ~80% of K=10 candidates. Combined with cycle 26's prime-aware retrain (whose model now correctly predicts prime-aware accept), τ=0 is the natural cutoff. ILS room may reopen without losing accept rate.
 - C12. **I6 learned candidate filter + cycle-22 Z1**: post-train-only — use cycle-26's ranker model in a batched forward pass over all N×k=10 candidate pairs once, build a static priority array, then 2-opt sweeps read from this array instead of cKDTree-NN. Avoids the K_in>K_use OOD trap of I3 (cycle 4/8) because the filter is trained on the actual move distribution, not just geometry.
+
+## Appended (research: modern-learned/hybrid — manual injection, plateau break)
+
+User-requested research injection at neural cycle ~31 (val_cost
+plateau around 1,551,636). Sources: foundational neural-TSP
+literature (Bello/Vinyals/Kool/Hottung lineage); no Santa-specific
+writeups consulted.
+
+- M7. **Tiny single-layer attention model for partial-tour
+  construction**: replace the NN seed with a learned construction
+  model. Single multi-head attention layer (4 heads, 32-dim) takes
+  the partial tour's last 8 cities + the unvisited candidate set,
+  outputs softmax over candidates. Train via REINFORCE on tour-cost
+  reward (R6 below) or via imitation on LKH-derived tours. Even at
+  ~50K params it can encode "global topology awareness" the greedy
+  NN cannot. Replaces just the construction phase, not the local
+  search — keeps the existing learned ranker intact.
+  [src: Vinyals 2015 Pointer Networks NIPS; Kool, van Hoof, Welling
+  2019 ICLR "Attention, Learn to Solve Routing Problems"]
+
+- T8. **Imitation labels from short-LKH oracle on subtours**:
+  current training data uses the solver's own accept/reject
+  labels — these are quality-bounded by the solver itself. Instead,
+  extract random 100-city subtours from the current best, run a
+  short-budget LKH (off-the-shelf via PyConcorde or the C
+  implementation; ~2s per subtour) to find their local optima, and
+  label every move LKH considered as "accept if LKH took it, else
+  reject." Higher-quality labels → tighter accept boundary → better
+  ranker.
+  [src: Joshi, Cappart, Rousseau, Laurent 2022 Constraints
+  "Learning Heuristics for the TSP"; Helsgaun LKH-3]
+
+- R6. **REINFORCE with val_cost reward (actor-critic)**: train the
+  ranker end-to-end with policy gradient — at each 2-opt sweep, the
+  model's output distribution over K=10 candidates is sampled, the
+  resulting tour change yields a per-step reward (= -gain), and a
+  rolling-average value baseline reduces variance. Bypasses the
+  "what label is right?" question entirely; the loss is the actual
+  metric. Risky (high variance, longer training) but the only
+  approach where the model isn't bottlenecked by its label source.
+  [src: Bello, Pham, Le, Norouzi, Bengio 2016 "Neural Combinatorial
+  Optimization with RL"; Kool 2019 attention model with REINFORCE
+  baseline]
