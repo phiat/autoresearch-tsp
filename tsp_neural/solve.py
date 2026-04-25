@@ -602,10 +602,12 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         print(f"  initial converge: 2opt={s2}sw, or-opt={sor}sw, val_cost={best_cost:.2f}, remaining {budget.remaining():.1f}s")
 
         rng = np.random.default_rng(0)
+        strength = 2
+        no_improve_streak = 0
         while not budget.expired():
             new_tour = best_tour.copy()
-            new_tour = double_bridge(new_tour, rng)
-            new_tour = double_bridge(new_tour, rng)
+            for _ in range(strength):
+                new_tour = double_bridge(new_tour, rng)
             new_pos = np.empty(n, dtype=np.int64)
             new_pos[new_tour[:-1]] = np.arange(n, dtype=np.int64)
             s2, sor, ninf = vnd(new_tour, new_pos)
@@ -613,11 +615,18 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             restarts += 1
             new_cost = score_tour(new_tour, xy, is_prime)
             if new_cost < best_cost:
-                print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f} ↓ ({best_cost - new_cost:+.2f})")
+                print(f"    restart {restarts} (s={strength}): 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f} ↓ ({best_cost - new_cost:+.2f})")
                 best_cost = new_cost
                 best_tour = new_tour.copy()
-            elif restarts <= 5 or restarts % 5 == 0:
-                print(f"    restart {restarts}: 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f}")
+                no_improve_streak = 0
+                strength = 2
+            else:
+                no_improve_streak += 1
+                if no_improve_streak >= 3:
+                    strength = min(strength + 1, 5)
+                    no_improve_streak = 0
+                if restarts <= 5 or restarts % 5 == 0:
+                    print(f"    restart {restarts} (s={strength}): 2opt={s2}sw or-opt={sor}sw val_cost={new_cost:.2f}")
         print(f"  done: {restarts} restarts, best val_cost={best_cost:.2f}")
         return best_tour, inference_calls, restarts
     else:
