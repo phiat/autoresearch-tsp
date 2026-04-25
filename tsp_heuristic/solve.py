@@ -504,24 +504,24 @@ def _ils_worker(args):
 
 def _full_seq_ils_worker(args):
     """Picklable worker that runs a complete sequential ILS trajectory (X8 mechanism)
-    with its own RNG seed, time budget, and (lns_frac, lns_bias, restart_after) params
-    so different workers in an ensemble explore different parameter regions."""
+    with its own RNG seed and time budget. Returns (val_cost, tour) after prime-swap."""
     (seed_tour, seed_cost, rng_seed, xy, candidates, is_prime,
-     worker_budget_sec, start_city, lns_frac, lns_bias, restart_after) = args
+     worker_budget_sec, start_city) = args
     rng = np.random.default_rng(rng_seed)
     n = xy.shape[0]
     best_tour = seed_tour.copy()
     best_cost = seed_cost
     pos = np.empty(n, dtype=np.int64)
     no_improve = 0
+    RESTART_AFTER = 40
     budget = TimeBudget(worker_budget_sec)
     while not budget.expired():
-        if no_improve >= restart_after:
+        if no_improve >= RESTART_AFTER:
             seed_city = int(rng.integers(1, n))
             cand, _ = fast_nn(xy, candidates, seed_city)
             idx = int(np.where(cand == start_city)[0][0])
             cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
-            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=lns_frac, bias=lns_bias)
+            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
             no_improve = 0
         else:
             cand = best_tour
@@ -531,7 +531,7 @@ def _full_seq_ils_worker(args):
             elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
             else:
-                cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=lns_frac, bias=lns_bias)
+                cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
@@ -562,26 +562,12 @@ def ensemble_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
           f"worker 0 = pinned 0xBEEF) ...")
     rng = np.random.default_rng(0xCAFE)
     ctx = mp.get_context("fork")
-    # Per-worker parameter diversity: 8 distinct (frac, bias, restart_after)
-    # combinations spanning the proven sweet-spot region.
-    param_grid = [
-        (0.010, 8.0,  40),  # baseline X8
-        (0.010, 4.0,  40),  # smaller bias
-        (0.010, 16.0, 40),  # bigger bias
-        (0.005, 8.0,  40),  # smaller destroy
-        (0.015, 8.0,  40),  # bigger destroy
-        (0.010, 8.0,  30),  # more frequent restarts
-        (0.010, 8.0,  60),  # less frequent restarts
-        (0.010, 8.0,  20),  # P4t-style frequent restarts
-    ]
     args_list = []
     for w in range(workers):
         worker_seed = 0xBEEF if w == 0 else int(rng.integers(0, 2**31 - 1))
-        frac, bias, restart_after = param_grid[w % len(param_grid)]
         args_list.append((
             best_tour, best_cost, worker_seed,
             xy, candidates, is_prime, worker_budget_sec, START_CITY,
-            frac, bias, restart_after,
         ))
     with ctx.Pool(processes=workers) as pool:
         results = pool.map(_full_seq_ils_worker, args_list)
