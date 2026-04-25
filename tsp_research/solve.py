@@ -140,35 +140,38 @@ def build_candidates(xy, k):
 
 
 @njit(cache=True, fastmath=True)
-def or1_sweep(tour, pos, xy, candidates):
-    """Or-1: relocate single city to a better position (after one of its k-NN).
-    Returns number of improvements applied."""
+def or_seg_sweep(tour, pos, xy, candidates, L):
+    """Or-opt with segment length L (1, 2, or 3). Inserts forward (no reversal)
+    after the best position drawn from the k-NN of the segment's first city."""
     n = len(xy)
     K = candidates.shape[1]
     n_imp = 0
-    for s in range(1, n):
-        x = tour[s]
+    for s in range(1, n - L + 1):
+        x0 = tour[s]
+        xL = tour[s + L - 1]
         a = tour[s - 1]
-        b = tour[s + 1]
-        d_ax = _euclid(xy, a, x)
-        d_xb = _euclid(xy, x, b)
+        b = tour[s + L]
+        d_ax0 = _euclid(xy, a, x0)
+        d_xLb = _euclid(xy, xL, b)
         d_ab = _euclid(xy, a, b)
-        gap_save = d_ax + d_xb - d_ab  # >= 0 by triangle inequality
+        gap_save = d_ax0 + d_xLb - d_ab
         if gap_save <= 1e-12:
             continue
         best_gain = 1e-12
         best_t = -1
         for kk in range(K):
-            t_city = candidates[x, kk]
+            t_city = candidates[x0, kk]
             t = pos[t_city]
-            if t == s or t == s - 1 or t >= n - 1:
+            if t >= s - 1 and t <= s + L - 1:
+                continue
+            if t >= n - L:
                 continue
             u = tour[t]
             v = tour[t + 1]
             d_uv = _euclid(xy, u, v)
-            d_ux = _euclid(xy, u, x)
-            d_xv = _euclid(xy, x, v)
-            insert_cost = d_ux + d_xv - d_uv  # >= 0 by triangle inequality
+            d_ux0 = _euclid(xy, u, x0)
+            d_xLv = _euclid(xy, xL, v)
+            insert_cost = d_ux0 + d_xLv - d_uv
             gain = gap_save - insert_cost
             if gain > best_gain:
                 best_gain = gain
@@ -176,30 +179,46 @@ def or1_sweep(tour, pos, xy, candidates):
         if best_t < 0:
             continue
         t = best_t
-        if t < s:
-            # shift tour[t+1..s-1] right by 1, place x at t+1
-            for q in range(s, t + 1, -1):
-                cy = tour[q - 1]
+        # Stash segment cities then shift the gap closed and reinsert.
+        seg0 = tour[s]
+        seg1 = tour[s + 1] if L >= 2 else 0
+        seg2 = tour[s + 2] if L >= 3 else 0
+        if t < s - 1:
+            # shift tour[t+1..s-1] right by L positions
+            for q in range(s + L - 1, t + L, -1):
+                cy = tour[q - L]
                 tour[q] = cy
                 pos[cy] = q
-            tour[t + 1] = x
-            pos[x] = t + 1
-        else:  # t > s
-            # shift tour[s+1..t] left by 1, place x at t
-            for q in range(s, t):
-                cy = tour[q + 1]
+            tour[t + 1] = seg0
+            pos[seg0] = t + 1
+            if L >= 2:
+                tour[t + 2] = seg1
+                pos[seg1] = t + 2
+            if L >= 3:
+                tour[t + 3] = seg2
+                pos[seg2] = t + 3
+        else:  # t > s + L - 1
+            # shift tour[s+L..t] left by L positions
+            for q in range(s, t - L + 1):
+                cy = tour[q + L]
                 tour[q] = cy
                 pos[cy] = q
-            tour[t] = x
-            pos[x] = t
+            tour[t - L + 1] = seg0
+            pos[seg0] = t - L + 1
+            if L >= 2:
+                tour[t - L + 2] = seg1
+                pos[seg1] = t - L + 2
+            if L >= 3:
+                tour[t - L + 3] = seg2
+                pos[seg2] = t - L + 3
         n_imp += 1
     return n_imp
 
 
 def run_local(tour, pos, xy, candidates, budget, max_outer=20):
-    """Alternate 2-opt and Or-1 sweeps until both converge or budget exhausted."""
+    """Alternate 2-opt and Or-{1,2,3} sweeps until all converge or budget exhausted."""
     total_2opt = 0
-    total_or1 = 0
+    total_or = 0
     for outer in range(max_outer):
         if budget.expired():
             break
@@ -210,18 +229,22 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
             if n_imp == 0:
                 break
         total_2opt += s2
-        if budget.expired():
-            break
-        s1 = 0
-        while not budget.expired():
-            n_imp = or1_sweep(tour, pos, xy, candidates)
-            s1 += 1
-            if n_imp == 0:
+        any_or = 0
+        for L in (1, 2, 3):
+            if budget.expired():
                 break
-        total_or1 += s1
-        if s2 == 1 and s1 == 1:
+            sL = 0
+            while not budget.expired():
+                n_imp = or_seg_sweep(tour, pos, xy, candidates, L)
+                sL += 1
+                if n_imp == 0:
+                    break
+            total_or += sL
+            if sL > 1:
+                any_or += 1
+        if s2 == 1 and any_or == 0:
             break
-    return total_2opt, total_or1
+    return total_2opt, total_or
 
 
 def double_bridge(tour, rng):
@@ -258,9 +281,9 @@ def solve(xy, is_prime, budget):
     pos = np.empty(n, dtype=np.int64)
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
-    print("  running 2-opt + Or-1 to local optimum ...")
-    s2, s1 = run_local(tour, pos, xy, candidates, budget)
-    print(f"  local converged: {s2} 2-opt sweeps, {s1} or-1 sweeps, remaining {budget.remaining():.1f}s")
+    print("  running 2-opt + Or-{1,2,3} to local optimum ...")
+    s2, sor = run_local(tour, pos, xy, candidates, budget)
+    print(f"  local converged: {s2} 2-opt sweeps, {sor} or-opt sweeps, remaining {budget.remaining():.1f}s")
 
     best_tour = tour.copy()
     best_cost = score_tour(best_tour, xy, is_prime)
