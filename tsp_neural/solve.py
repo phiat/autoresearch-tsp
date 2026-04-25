@@ -353,6 +353,19 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                     dont_look[a_next] = False
                     dont_look[c] = False
                     dont_look[c_next] = False
+                    for kk2 in range(K):
+                        nb = candidates[a, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
+                        nb = candidates[a_next, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
+                        nb = candidates[c, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
+                        nb = candidates[c_next, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
                 gain = d_a_anext + _euclid(xy, c, c_next) \
@@ -371,6 +384,19 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                     dont_look[a_next] = False
                     dont_look[c] = False
                     dont_look[c_next] = False
+                    for kk2 in range(K):
+                        nb = candidates[a, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
+                        nb = candidates[a_next, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
+                        nb = candidates[c, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
+                        nb = candidates[c_next, kk2]
+                        if nb != 0:
+                            dont_look[nb] = False
         if not accepted:
             dont_look[a] = True
     return n_imp, n_inf
