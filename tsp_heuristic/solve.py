@@ -27,7 +27,7 @@ K_NEIGHBORS = 4
 # Parallel ILS knobs (env-overridable so agents can revert to single-thread).
 # WORKERS=1 → sequential ILS (legacy path).
 # WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
-ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 2))
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 8))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
 
@@ -502,6 +502,84 @@ def _ils_worker(args):
     return val, cand
 
 
+def _full_seq_ils_worker(args):
+    """Top-level (picklable) worker that runs a complete sequential ILS trajectory
+    (X8 mechanism: perturb + local-search + NN-restart-smoothed on no-improve=40)
+    with its own RNG seed and time budget. Returns (val_cost, tour) of the best
+    found within budget, after prime-swap polish."""
+    (seed_tour, seed_cost, rng_seed, xy, candidates, is_prime,
+     worker_budget_sec, start_city) = args
+    rng = np.random.default_rng(rng_seed)
+    n = xy.shape[0]
+    best_tour = seed_tour.copy()
+    best_cost = seed_cost
+    pos = np.empty(n, dtype=np.int64)
+    no_improve = 0
+    RESTART_AFTER = 40
+    budget = TimeBudget(worker_budget_sec)
+    while not budget.expired():
+        if no_improve >= RESTART_AFTER:
+            seed_city = int(rng.integers(1, n))
+            cand, _ = fast_nn(xy, candidates, seed_city)
+            idx = int(np.where(cand == start_city)[0][0])
+            cand = np.concatenate([cand[idx:-1], cand[:idx + 1]])
+            cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
+            no_improve = 0
+        else:
+            cand = best_tour
+            r = rng.random()
+            if r < 1.0 / 3.0:
+                cand = double_bridge(cand, rng)
+            elif r < 2.0 / 3.0:
+                cand = segment_shift(cand, rng)
+            else:
+                cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
+        pos[cand[:-1]] = np.arange(n, dtype=np.int64)
+        run_local(cand, pos, xy, candidates, budget)
+        if budget.expired():
+            break
+        new_cost = score_tour(cand, xy, is_prime)
+        if new_cost < best_cost:
+            best_cost = new_cost
+            best_tour = cand.copy()
+            no_improve = 0
+        else:
+            no_improve += 1
+    pos[best_tour[:-1]] = np.arange(n, dtype=np.int64)
+    for _ in range(20):
+        n_imp = prime_swap_pass(best_tour, pos, xy, is_prime, candidates)
+        if n_imp == 0:
+            break
+    final_cost = score_tour(best_tour, xy, is_prime)
+    return final_cost, best_tour
+
+
+def ensemble_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
+                      workers, worker_budget_sec):
+    """Run `workers` independent sequential ILS trajectories in parallel (each
+    with its own RNG seed); return min(all). Captures rng-luck via best-of-N."""
+    print(f"  running ENSEMBLE ILS "
+          f"({workers} parallel trajectories, each {worker_budget_sec:.0f}s) ...")
+    rng = np.random.default_rng(0xCAFE)
+    ctx = mp.get_context("fork")
+    args_list = []
+    for w in range(workers):
+        args_list.append((
+            best_tour, best_cost, int(rng.integers(0, 2**31 - 1)),
+            xy, candidates, is_prime, worker_budget_sec, START_CITY,
+        ))
+    with ctx.Pool(processes=workers) as pool:
+        results = pool.map(_full_seq_ils_worker, args_list)
+    sorted_costs = sorted(r[0] for r in results)
+    print(f"  trajectory costs: best={sorted_costs[0]:.2f}, "
+          f"worst={sorted_costs[-1]:.2f}, all={[f'{c:.0f}' for c in sorted_costs]}")
+    cand_cost, cand_tour = min(results, key=lambda r: r[0])
+    if cand_cost < best_cost:
+        best_cost = cand_cost
+        best_tour = cand_tour
+    return best_tour, best_cost
+
+
 def parallel_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
                       workers, worker_budget_sec):
     """Batched parallel ILS. Dispatches `workers` perturb+local-search jobs per
@@ -584,9 +662,13 @@ def solve(xy, is_prime, budget):
         return best_tour
 
     if ILS_WORKERS > 1:
-        best_tour, best_cost = parallel_ils_loop(
+        # Use the ensemble (best-of-N independent trajectories) instead of batched parallel.
+        # Each worker has its own ILS state, so within-batch best-feedback loss disappears.
+        # Worker budget = budget.remaining() - safety margin (post-pass + IPC).
+        worker_budget = max(1.0, budget.remaining() - 5.0)
+        best_tour, best_cost = ensemble_ils_loop(
             best_tour, best_cost, xy, candidates, is_prime, budget,
-            workers=ILS_WORKERS, worker_budget_sec=ILS_WORKER_BUDGET,
+            workers=ILS_WORKERS, worker_budget_sec=worker_budget,
         )
     else:
         print("  running ILS (perturb + local-search, random NN restart on stuck) ...")
