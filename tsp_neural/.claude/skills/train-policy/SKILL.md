@@ -122,7 +122,7 @@ Recommend: <keep / discard / debug>
 - Do not skip the val_auc gate. If the model didn't learn, integrating
   it is just adding overhead. Discard early.
 - Do not implement Or-opt, ILS, double-bridge, or prime-aware moves
-  here. Those belong in `tsp_research/` or in a *later* combination
+  here. Those belong in `tsp_heuristic/` or in a *later* combination
   cycle (C-class) once learning works.
 - Do not bundle multiple M/T/R/I ideas into one experiment. Pick one
   axis at a time so you can attribute the val_cost delta.

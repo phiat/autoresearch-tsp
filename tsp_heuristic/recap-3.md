@@ -1,4 +1,4 @@
-# Recap 3 — `tsp/apr25` continued
+# Recap 3 — `heuristic/apr25` continued
 
 Covers cycles #13–#16 (results.tsv rows 13-16 inclusive). Recap-2 had
 row #13 in-flight; this recap resolves it and adds three more completed
@@ -121,7 +121,7 @@ strong evidence that restart-on-stuck is unlocking new basins.
 
 ## State
 
-- Branch: `tsp/apr25` @ `10e5fcd` (merge commit on top of `035729e`).
+- Branch: `heuristic/apr25` @ `10e5fcd` (merge commit on top of `035729e`).
 - Last kept experiment commit: `035729e` (P4 random NN restart,
   val 1,548,496.21).
 - 16 logged rows in `results.tsv` (13 keeps, 3 discards).

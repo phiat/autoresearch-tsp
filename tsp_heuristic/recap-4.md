@@ -1,4 +1,4 @@
-# Recap 4 — `tsp/apr25` continued
+# Recap 4 — `heuristic/apr25` continued
 
 Covers cycles #17–#21 (results.tsv rows 17-21 inclusive). Recap-3 closed
 at row #16 / commit `035729e` with the P4 random-restart mechanism as the
@@ -126,7 +126,7 @@ candidate-list size axis.
 
 ## State
 
-- Branch: `tsp/apr25` @ `5393897` (H1k4).
+- Branch: `heuristic/apr25` @ `5393897` (H1k4).
 - Last kept experiment commit: `5393897` (val 1,547,900.81).
 - In-flight: none. run.log is the completed H1k4 run (176 ILS iters,
   0 restarts, 9 improvements, 15 prime-swap post-pass swaps).

@@ -1,4 +1,4 @@
-# tsp_research
+# tsp_heuristic
 
 Autonomous LLM research loop for the Kaggle Traveling Santa 2018 Prime Paths
 problem. Same shape as karpathy/autoresearch, different task: combinatorial
@@ -9,8 +9,8 @@ optimisation instead of language modelling.
 To set up a new experiment, work with the user to:
 
 1. **Agree on a run tag**: propose a tag based on today's date (e.g. `apr25`).
-   The branch `tsp/<tag>` must not already exist — this is a fresh run.
-2. **Create the branch**: `git checkout -b tsp/<tag>` from current main.
+   The branch `heuristic/<tag>` must not already exist — this is a fresh run.
+2. **Create the branch**: `git checkout -b heuristic/<tag>` from current main.
 3. **Read the in-scope files**:
    - `README.md` — repo context.
    - `prepare.py` — frozen data loader, `score_tour()` metric, time budget.
@@ -33,7 +33,7 @@ scoring). Launch as: `uv run solve.py`.
 **What you CAN do:**
 - Modify `solve.py` — algorithm, data structures, neighbourhood moves,
   meta-heuristics, ML-guided steps, anything. You may add new helper
-  files/modules in `tsp_research/` if the architecture demands it, but
+  files/modules in `tsp_heuristic/` if the architecture demands it, but
   `solve.py` remains the entry point.
 
 **What you CANNOT do:**

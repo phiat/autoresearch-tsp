@@ -21,7 +21,7 @@ metric is total tour cost (lower is better).
 
 **There is no neural network training in this project.** Unlike the
 upstream autoresearch (which trains a small GPT every cycle and reports
-`val_bpb`), `tsp_research/solve.py` runs **classical heuristic search** —
+`val_bpb`), `tsp_heuristic/solve.py` runs **classical heuristic search** —
 nearest-neighbor construction, 2-opt with cKDTree candidate lists,
 Or-opt, iterated local search with adaptive perturbation, prime-aware
 swap polish. The "thing being optimised" is a **permutation of 197,769
@@ -43,7 +43,7 @@ solver.")
 ## Layout — two parallel loops, same metric
 
 ```
-tsp_research/         classical heuristic-search loop
+tsp_heuristic/         classical heuristic-search loop
                       (NN → 2-opt → Or-opt → ILS → prime polish)
 
 tsp_neural/           neural-guided local search loop
@@ -64,17 +64,17 @@ toolset.
 
 ## Running both loops in parallel
 
-Each loop wants its own branch (`tsp/<tag>` for classical,
+Each loop wants its own branch (`heuristic/<tag>` for classical,
 `neural/<tag>` for neural-guided). A single working tree only has one
 `HEAD` at a time, so to run them simultaneously, use **git
 worktrees** — each loop gets a sibling working directory with its own
 checked-out branch.
 
 ```bash
-# tsp_research — runs in this working tree on its experiment branch
+# tsp_heuristic — runs in this working tree on its experiment branch
 cd /home/phiat/lab/apr/auto-rez
-git checkout -b tsp/<tag> main         # one-time
-cd tsp_research/
+git checkout -b heuristic/<tag> main         # one-time
+cd tsp_heuristic/
 # ...point a Claude Code session here, follow program.md
 
 # tsp_neural — runs in a sibling worktree on its own branch
@@ -91,18 +91,18 @@ across paradigms once both have data).
 ## Quick start
 
 ```bash
-# 1. Unzip the Kaggle archive into tsp_research/data/ so cities.csv exists
+# 1. Unzip the Kaggle archive into tsp_heuristic/data/ so cities.csv exists
 # 2. Sync deps and smoke-test the classical loop
-cd tsp_research
+cd tsp_heuristic
 uv sync
 just data         # smoke test: loads cities, scores identity tour
 just run          # baseline solver (~5 min)
 just metrics      # pull val_cost / solve_seconds from run.log
 ```
 
-Then point a fresh Claude Code session at `tsp_research/` and prompt it
+Then point a fresh Claude Code session at `tsp_heuristic/` and prompt it
 with: *"read AGENTS.md and program.md, then start the loop on branch
-`tsp/<tag>`."* The agent will sample ideas from `ideas.md`, edit
+`heuristic/<tag>`."* The agent will sample ideas from `ideas.md`, edit
 `solve.py`, run experiments, log results, and iterate. Every 4 cycles a
 hook flags a recap-pending sentinel; the agent runs `/recap` to update
 the running `recap-N.md` series.
@@ -114,7 +114,7 @@ weak; the agent's first 3 cycles introduce learning).
 
 ## What's in the toolset
 
-`tsp_research/.claude/` ships:
+`tsp_heuristic/.claude/` ships:
 
 - **Subagents**: `recap-writer` (maintains `recap-*.md`), `paper-researcher`
   (sources fresh ideas from literature into `ideas.md`).
@@ -134,7 +134,7 @@ weak; the agent's first 3 cycles introduce learning).
 ## Status
 
 The first session's run-by-run progress is captured in
-`tsp_research/recap-1.md` and `recap-2.md`. The loop is on a credible
+`tsp_heuristic/recap-1.md` and `recap-2.md`. The loop is on a credible
 trajectory toward the public-leaderboard scores; the algorithm has matured
 into: fast cKDTree-walked NN seed → 2-opt + Or-opt(1,2,3) local search with
 candidate lists → ILS with adaptive double-bridge / segment-shift

@@ -2,20 +2,20 @@
 
 ## Sub-projects
 
-- **`tsp_research/`** — classical heuristic-search loop for the Kaggle
-  Santa 2018 TSP. Runs on a `tsp/<tag>` branch in this working tree.
+- **`tsp_heuristic/`** — classical heuristic-search loop for the Kaggle
+  Santa 2018 TSP. Runs on a `heuristic/<tag>` branch in this working tree.
   Has its own `AGENTS.md`, `program.md`, and `.claude/` toolset.
 - **`tsp_neural/`** — neural-guided local search loop on the same
   task. Designed to run in a **separate git worktree** on a
   `neural/<tag>` branch so it can run in parallel with
-  `tsp_research/` without `HEAD` conflicts. Has its own
+  `tsp_heuristic/` without `HEAD` conflicts. Has its own
   `AGENTS.md`, `program.md`, `.claude/` (with an extra `train-policy`
   skill), and PyTorch in deps.
 - **`autoresearch/`** — vendored upstream (karpathy/autoresearch),
   its own git repo. Reference only; do not modify.
 
 When both loops are live, **two Claude Code sessions** are running —
-one in this working tree's `tsp_research/`, one in the worktree's
+one in this working tree's `tsp_heuristic/`, one in the worktree's
 `tsp_neural/`. They share `.git/` (branches are mutually visible) but
 never share `HEAD`. See the outer `README.md` for worktree setup.
 
@@ -106,7 +106,7 @@ bd close <id>         # Complete work
 
 ## Running two loops in parallel (worktrees)
 
-When `tsp_research/` and `tsp_neural/` are both live, each runs in its
+When `tsp_heuristic/` and `tsp_neural/` are both live, each runs in its
 own **git worktree** (sibling working directories sharing the same
 `.git/`), so neither flips the other's `HEAD`. Sessions for the two
 loops are completely independent and never see each other's working

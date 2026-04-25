@@ -1,5 +1,5 @@
-# Common commands for the tsp_research autonomous loop.
-# Invoke with `just <recipe>` from inside tsp_research/.
+# Common commands for the tsp_heuristic autonomous loop.
+# Invoke with `just <recipe>` from inside tsp_heuristic/.
 # `just --list` to see all recipes.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]

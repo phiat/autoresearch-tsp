@@ -1,4 +1,4 @@
-# Agent guide — `tsp_research/`
+# Agent guide — `tsp_heuristic/`
 
 This file is the index of tooling available to the autonomous loop.
 For the experiment loop's operational rules, see `program.md`.
