@@ -440,26 +440,15 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                 gain = pf_ai * d_a_anext + pf_cj_old * d_c_cnext \
                        - pf_ai * d_a_c - pf_cj_new * d_anext_cnext
                 if gain > 1e-12:
-                    interior_delta = 0.0
-                    for p in range(ai + 1, cj):
-                        if (p + 1) % 10 != 0:
-                            continue
-                        d_old = _euclid(xy, tour[p], tour[p + 1])
-                        d_new = _euclid(xy, tour[ai + cj - p + 1], tour[ai + cj - p])
-                        if is_prime_f32[tour[p]] < 0.5:
-                            interior_delta += 0.1 * d_old
-                        if is_prime_f32[tour[ai + cj - p + 1]] < 0.5:
-                            interior_delta -= 0.1 * d_new
-                    if gain + interior_delta > 1e-12:
-                        lo, hi = ai + 1, cj
-                        while lo < hi:
-                            x, y = tour[lo], tour[hi]
-                            tour[lo], tour[hi] = y, x
-                            pos[y], pos[x] = lo, hi
-                            lo += 1
-                            hi -= 1
-                        n_imp += 1
-                        accepted = True
+                    lo, hi = ai + 1, cj
+                    while lo < hi:
+                        x, y = tour[lo], tour[hi]
+                        tour[lo], tour[hi] = y, x
+                        pos[y], pos[x] = lo, hi
+                        lo += 1
+                        hi -= 1
+                    n_imp += 1
+                    accepted = True
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
                 d_c_cnext = _euclid(xy, c, c_next)
@@ -471,26 +460,15 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                 gain = pf_ai_old * d_a_anext + pf_cj * d_c_cnext \
                        - pf_cj * d_a_c - pf_ai_new * d_anext_cnext
                 if gain > 1e-12:
-                    interior_delta = 0.0
-                    for p in range(cj + 1, ai):
-                        if (p + 1) % 10 != 0:
-                            continue
-                        d_old = _euclid(xy, tour[p], tour[p + 1])
-                        d_new = _euclid(xy, tour[cj + ai - p + 1], tour[cj + ai - p])
-                        if is_prime_f32[tour[p]] < 0.5:
-                            interior_delta += 0.1 * d_old
-                        if is_prime_f32[tour[cj + ai - p + 1]] < 0.5:
-                            interior_delta -= 0.1 * d_new
-                    if gain + interior_delta > 1e-12:
-                        lo, hi = cj + 1, ai
-                        while lo < hi:
-                            x, y = tour[lo], tour[hi]
-                            tour[lo], tour[hi] = y, x
-                            pos[y], pos[x] = lo, hi
-                            lo += 1
-                            hi -= 1
-                        n_imp += 1
-                        accepted = True
+                    lo, hi = cj + 1, ai
+                    while lo < hi:
+                        x, y = tour[lo], tour[hi]
+                        tour[lo], tour[hi] = y, x
+                        pos[y], pos[x] = lo, hi
+                        lo += 1
+                        hi -= 1
+                    n_imp += 1
+                    accepted = True
     return n_imp, n_inf
 
 
