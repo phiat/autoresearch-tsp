@@ -175,31 +175,35 @@ def or_seg_sweep(tour, pos, xy, candidates, L):
         best_gain = 1e-12
         best_t = -1
         best_rev = False
-        for kk in range(K):
-            t_city = candidates[x0, kk]
-            t = pos[t_city]
-            if t >= s - 1 and t <= s + L - 1:
-                continue
-            if t >= n - L:
-                continue
-            u = tour[t]
-            v = tour[t + 1]
-            d_uv = _euclid(xy, u, v)
-            d_ux0 = _euclid(xy, u, x0)
-            d_xLv = _euclid(xy, xL, v)
-            gain_fwd = gap_save - (d_ux0 + d_xLv - d_uv)
-            if gain_fwd > best_gain:
-                best_gain = gain_fwd
-                best_t = t
-                best_rev = False
-            if L >= 2:
-                d_uxL = _euclid(xy, u, xL)
-                d_x0v = _euclid(xy, x0, v)
-                gain_rev = gap_save - (d_uxL + d_x0v - d_uv)
-                if gain_rev > best_gain:
-                    best_gain = gain_rev
+        # Search candidates of BOTH segment endpoints (x0 and xL); for L=1 they're equal.
+        n_src = 2 if L >= 2 else 1
+        for src_idx in range(n_src):
+            src = x0 if src_idx == 0 else xL
+            for kk in range(K):
+                t_city = candidates[src, kk]
+                t = pos[t_city]
+                if t >= s - 1 and t <= s + L - 1:
+                    continue
+                if t >= n - L:
+                    continue
+                u = tour[t]
+                v = tour[t + 1]
+                d_uv = _euclid(xy, u, v)
+                d_ux0 = _euclid(xy, u, x0)
+                d_xLv = _euclid(xy, xL, v)
+                gain_fwd = gap_save - (d_ux0 + d_xLv - d_uv)
+                if gain_fwd > best_gain:
+                    best_gain = gain_fwd
                     best_t = t
-                    best_rev = True
+                    best_rev = False
+                if L >= 2:
+                    d_uxL = _euclid(xy, u, xL)
+                    d_x0v = _euclid(xy, x0, v)
+                    gain_rev = gap_save - (d_uxL + d_x0v - d_uv)
+                    if gain_rev > best_gain:
+                        best_gain = gain_rev
+                        best_t = t
+                        best_rev = True
         if best_t < 0:
             continue
         t = best_t
