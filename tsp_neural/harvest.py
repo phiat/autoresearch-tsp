@@ -16,7 +16,7 @@ import numpy as np
 from pathlib import Path
 
 MOVES_DIR = Path(__file__).parent / "moves"
-MAX_ROWS = 25_000_000  # ~525MB at 21B/row; we cap and stop logging past this
+MAX_ROWS = 50_000_000  # K=30 fills ~3× faster than K=10; lift cap so early sweeps fit
 
 
 def make_buffers(max_rows: int = MAX_ROWS) -> dict:

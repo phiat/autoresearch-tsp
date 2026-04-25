@@ -44,7 +44,8 @@ from prepare import (
 
 import harvest as _harvest
 
-K_NEIGHBORS = 10
+K_NEIGHBORS = 10            # baseline 2-opt and NN seed
+K_NEIGHBORS_HARVEST = 30    # harvest mode logs the wider pool to cover ranker OOD region
 HARVEST = os.environ.get("HARVEST", "0") == "1"
 MODE = os.environ.get("MODE", "solve")
 RANK = os.environ.get("RANK", "auto")  # "auto" => use ckpt if found; "0" force baseline; "1" require ckpt
@@ -405,8 +406,10 @@ def run_2opt_harvest(tour, pos, xy, candidates, budget, bufs, max_sweeps=10_000)
 def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
     print("  building candidate list (cKDTree) ...")
     tree = cKDTree(xy)
-    _, idx = tree.query(xy, k=K_NEIGHBORS + 1)
-    candidates = idx[:, 1:].astype(np.int32)
+    k_query = max(K_NEIGHBORS, K_NEIGHBORS_HARVEST) + 1
+    _, idx = tree.query(xy, k=k_query)
+    candidates_full = idx[:, 1:].astype(np.int32)
+    candidates = candidates_full[:, :K_NEIGHBORS]
 
     print("  building NN tour ...")
     tour = nearest_neighbor(xy, candidates, budget)
@@ -421,8 +424,9 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
 
     inference_calls = 0
     if harvest_bufs is not None:
-        print("  running 2-opt (HARVEST=1, logging candidates) ...")
-        sweeps = run_2opt_harvest(tour, pos, xy, candidates, budget, harvest_bufs)
+        candidates_h = candidates_full[:, :K_NEIGHBORS_HARVEST]
+        print(f"  running 2-opt (HARVEST=1, K={K_NEIGHBORS_HARVEST}, logging candidates) ...")
+        sweeps = run_2opt_harvest(tour, pos, xy, candidates_h, budget, harvest_bufs)
     elif ranked_weights is not None:
         print("  running 2-opt (RANK, MLP-scored candidate order) ...")
         is_prime_f32 = is_prime.astype(np.float32)
