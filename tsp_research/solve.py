@@ -63,47 +63,73 @@ def _euclid(xy, a, b):
 
 @njit(cache=True, fastmath=True)
 def two_opt_sweep(tour, pos, xy, candidates):
-    """One greedy first-improvement pass; returns number of improvements applied."""
+    """One greedy first-improvement pass; returns number of improvements applied.
+
+    For each city a at position ai, scans a's k nearest neighbours c and tries the
+    2-opt that introduces edge (a, c). Two cases depending on whether c sits later
+    or earlier in the tour — both produce the same gain formula but reverse a
+    different sub-segment.
+    """
     n = len(xy)
     K = candidates.shape[1]
     n_improvements = 0
-    for ai in range(1, n - 1):
+    for ai in range(1, n):
         a = tour[ai]
         a_next = tour[ai + 1]
         d_a_anext = _euclid(xy, a, a_next)
         for kk in range(K):
             c = candidates[a, kk]
-            if c == 0 or c == a_next:
+            if c == 0:
                 continue
             cj = pos[c]
-            if cj <= ai + 1 or cj >= n:
-                continue
-            d_a_c = _euclid(xy, a, c)
-            if d_a_c >= d_a_anext:
-                # gain = (d_a_anext - d_a_c) + (d_c_cnext - d_anext_cnext)
-                # the first term is <=0; second term is bounded by d_a_c (triangle)
-                # cheap prune that drops most non-improving candidates immediately.
-                continue
-            c_next = tour[cj + 1]
-            d_c_cnext = _euclid(xy, c, c_next)
-            d_anext_cnext = _euclid(xy, a_next, c_next)
-            gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
-            if gain > 1e-12:
-                lo = ai + 1
-                hi = cj
-                while lo < hi:
-                    x = tour[lo]
-                    y = tour[hi]
-                    tour[lo] = y
-                    tour[hi] = x
-                    pos[y] = lo
-                    pos[x] = hi
-                    lo += 1
-                    hi -= 1
-                a_next = tour[ai + 1]
-                d_a_anext = _euclid(xy, a, a_next)
-                n_improvements += 1
-                break  # first-improvement on this a
+            # Case A: c is later in the tour (cj > ai+1). Move = reverse tour[ai+1..cj].
+            # Case B: c is earlier in the tour (cj < ai-1). Move = reverse tour[cj+1..ai].
+            if cj > ai + 1 and cj < n:
+                c_next = tour[cj + 1]
+                d_a_c = _euclid(xy, a, c)
+                d_c_cnext = _euclid(xy, c, c_next)
+                d_anext_cnext = _euclid(xy, a_next, c_next)
+                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
+                if gain > 1e-12:
+                    lo = ai + 1
+                    hi = cj
+                    while lo < hi:
+                        x = tour[lo]
+                        y = tour[hi]
+                        tour[lo] = y
+                        tour[hi] = x
+                        pos[y] = lo
+                        pos[x] = hi
+                        lo += 1
+                        hi -= 1
+                    n_improvements += 1
+                    a_next = tour[ai + 1]
+                    d_a_anext = _euclid(xy, a, a_next)
+                    continue
+            elif cj >= 1 and cj < ai - 1:
+                c_next = tour[cj + 1]
+                d_a_c = _euclid(xy, a, c)
+                d_c_cnext = _euclid(xy, c, c_next)
+                d_anext_cnext = _euclid(xy, a_next, c_next)
+                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
+                if gain > 1e-12:
+                    lo = cj + 1
+                    hi = ai
+                    while lo < hi:
+                        x = tour[lo]
+                        y = tour[hi]
+                        tour[lo] = y
+                        tour[hi] = x
+                        pos[y] = lo
+                        pos[x] = hi
+                        lo += 1
+                        hi -= 1
+                    n_improvements += 1
+                    # `a` itself moved (it's now at position cj+1). Re-fetch from current ai.
+                    a = tour[ai]
+                    a_next = tour[ai + 1]
+                    d_a_anext = _euclid(xy, a, a_next)
+                    continue
     return n_improvements
 
 
