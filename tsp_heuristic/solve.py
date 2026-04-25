@@ -446,13 +446,18 @@ def lns_perturb_prime(tour, rng, xy, candidates, is_prime, frac=0.010, bias=4.0)
 
 
 def double_bridge(tour, rng):
-    """Martin-Otto-Felten double-bridge 4-opt perturbation. Cuts tour into
-    4 segments at 3 random points and reconnects A|C|B|D."""
+    """P5: k=2 stacked double-bridge kicks. Applies the Martin-Otto-Felten
+    4-opt cut twice in sequence, yielding an 8-opt non-sequential
+    perturbation. Stronger basin-escape kick than single DB; preserves the
+    DB arm's interface so call sites are unchanged."""
     n = len(tour) - 1  # tour[0] == tour[n] == START_CITY
-    cuts = rng.choice(n - 1, size=3, replace=False) + 1
-    cuts.sort()
-    i, j, k = int(cuts[0]), int(cuts[1]), int(cuts[2])
-    return np.concatenate([tour[:i], tour[j:k], tour[i:j], tour[k:]])
+    out = tour
+    for _ in range(2):
+        cuts = rng.choice(n - 1, size=3, replace=False) + 1
+        cuts.sort()
+        i, j, k = int(cuts[0]), int(cuts[1]), int(cuts[2])
+        out = np.concatenate([out[:i], out[j:k], out[i:j], out[k:]])
+    return out
 
 
 def segment_shift(tour, rng):
