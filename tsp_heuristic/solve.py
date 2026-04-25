@@ -27,7 +27,7 @@ K_NEIGHBORS = 4
 # Parallel ILS knobs (env-overridable so agents can revert to single-thread).
 # WORKERS=1 → sequential ILS (legacy path).
 # WORKERS>1 → batched parallel ILS via multiprocessing fork pool.
-ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 4))
+ILS_WORKERS = int(os.environ.get("ILS_WORKERS", 2))
 ILS_WORKER_BUDGET = float(os.environ.get("ILS_WORKER_BUDGET", 25.0))
 
 
@@ -485,20 +485,9 @@ def _ils_worker(args):
         cand = double_bridge(seed_tour, rng)
     elif perturb_kind == 1:
         cand = segment_shift(seed_tour, rng)
-    elif perturb_kind == 2:
+    else:
         cand = lns_perturb_prime(
             seed_tour, rng, xy, candidates, is_prime,
-            frac=0.010, bias=8.0,
-        )
-    else:
-        # perturb_kind == 3: X8-style NN-restart smoothed by LNS-prime.
-        n = xy.shape[0]
-        seed_city = int(rng.integers(1, n))
-        cand_tour, _ = fast_nn(xy, candidates, seed_city)
-        idx = int(np.where(cand_tour == seed_tour[0])[0][0])
-        cand = np.concatenate([cand_tour[idx:-1], cand_tour[:idx + 1]])
-        cand = lns_perturb_prime(
-            cand, rng, xy, candidates, is_prime,
             frac=0.010, bias=8.0,
         )
 
@@ -535,13 +524,9 @@ def parallel_ils_loop(best_tour, best_cost, xy, candidates, is_prime, budget,
                 break
 
             args_list = []
-            for w in range(workers):
+            for _ in range(workers):
                 worker_seed = int(rng.integers(0, 2**31 - 1))
-                # Worker 0 = X8-style NN-restart smoothed. Others = random of {DB, SS, LNS-prime}.
-                if w == 0:
-                    perturb_kind = 3
-                else:
-                    perturb_kind = int(rng.integers(0, 3))
+                perturb_kind = int(rng.integers(0, 3))
                 args_list.append((
                     best_tour, worker_seed, perturb_kind,
                     xy, candidates, is_prime, worker_budget_sec,
