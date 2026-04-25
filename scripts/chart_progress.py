@@ -1,6 +1,10 @@
 """
-Generate progress.png at repo root showing best val_cost over cycle index
-for both tsp_heuristic and tsp_neural loops, with a SOTA reference line.
+Generate progress.png at repo root showing % SOTA over experiment index
+for both tsp_heuristic and tsp_neural loops, with the SOTA reference at 100%.
+
+% SOTA = 100 - gap, where gap = (val_cost - SOTA) / SOTA * 100. Higher is
+better. Best-so-far line uses cummax over KEPT rows only (discards don't
+update the running best).
 
 Usage (from repo root or any subdir):
     uv run --with matplotlib --with pandas python scripts/chart_progress.py
@@ -46,9 +50,16 @@ def load_loop(name: str, path: Path) -> pd.DataFrame | None:
         return None
     df = df.copy()
     df["cycle"] = range(1, len(df) + 1)
-    # Treat 0 as "crash" sentinel and ignore for best-so-far.
-    df["val_for_best"] = df["val_cost"].replace(0, pd.NA)
-    df["best"] = df["val_for_best"].cummin()
+
+    # Convert to % SOTA. Treat 0 (crash sentinel) as NaN.
+    val = df["val_cost"].replace(0, pd.NA).astype("Float64")
+    df["sota_pct"] = 100.0 - (val - SOTA) / SOTA * 100.0
+
+    # Best-so-far line: cummax of % SOTA, but ONLY keep-status rows can update
+    # the running best (discards don't survive — they shouldn't pull the line up).
+    mask_keep = df["status"].astype(str).str.lower() == "keep"
+    df["sota_for_best"] = df["sota_pct"].where(mask_keep)
+    df["best_pct"] = df["sota_for_best"].cummax().ffill()
     return df
 
 
@@ -56,17 +67,19 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
 
     summary_lines: list[str] = []
+    all_pcts: list[float] = []
 
     for name, path, color in LOOPS:
         df = load_loop(name, path)
         if df is None:
             print(f"skip: {name} (no data at {path})")
             continue
-        # Best-so-far line, only plot where best is finite.
-        mask = df["best"].notna()
+
+        # Best-so-far line — only plot where best is finite.
+        mask = df["best_pct"].notna()
         ax.plot(
             df.loc[mask, "cycle"],
-            df.loc[mask, "best"],
+            df.loc[mask, "best_pct"],
             marker="o",
             markersize=3,
             linestyle="-",
@@ -74,40 +87,50 @@ def main() -> None:
             color=color,
             label=f"{name}/  (best so far)",
         )
+
         # Overlay each kept run faintly for context.
-        keeps = df[(df["status"] == "keep") & (df["val_for_best"].notna())]
+        keeps = df[(df["status"].astype(str).str.lower() == "keep")
+                   & (df["sota_pct"].notna())]
         if len(keeps):
             ax.scatter(
                 keeps["cycle"],
-                keeps["val_cost"],
+                keeps["sota_pct"].astype(float),
                 marker=".",
                 s=12,
                 color=color,
                 alpha=0.35,
             )
-        best = df["val_for_best"].min()
-        gap = (best - SOTA) / SOTA * 100
-        sota_pct = 100 - gap
+
+        best_pct = float(df["sota_for_best"].max())
+        all_pcts.append(best_pct)
+        # Find the val_cost of the best-kept row for the summary line.
+        best_val = float(df.loc[df["sota_for_best"].idxmax(), "val_cost"])
         summary_lines.append(
-            f"{name:14s}  {len(df):3d} cycles  best={best:>11,.0f}  "
-            f"({sota_pct:.2f}% SOTA)"
+            f"{name:14s}  {len(df):3d} cycles  "
+            f"best={best_val:>11,.0f}  ({best_pct:.2f}% SOTA)"
         )
 
+    # SOTA reference at 100%.
     ax.axhline(
-        SOTA,
+        100.0,
         color="#666666",
         linestyle="--",
         linewidth=1.0,
-        label=f"SOTA reference ({SOTA:,})",
+        label="SOTA reference (100%)",
     )
 
+    # Y-axis: focus on the working range (~96-100%) so movement is visible.
+    if all_pcts:
+        floor = min(all_pcts) - 1.0
+        ax.set_ylim(max(floor, 90.0), 100.5)
+
     ax.set_xlabel("logged experiment index (cycle)")
-    ax.set_ylabel("val_cost (lower is better)")
+    ax.set_ylabel("% SOTA  (higher is better)")
     ts = datetime.now().strftime("%Y-%m-%d %H:%M %Z").strip()
-    ax.set_title(f"Best val_cost over time   ({ts})")
-    ax.legend(loc="upper right", framealpha=0.95)
+    ax.set_title(f"% SOTA over experiments   ({ts})")
+    ax.legend(loc="lower right", framealpha=0.95)
     ax.grid(True, alpha=0.3)
-    ax.ticklabel_format(axis="y", style="plain")
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.2f}%"))
 
     plt.tight_layout()
     plt.savefig(OUTPUT, dpi=120, bbox_inches="tight")
