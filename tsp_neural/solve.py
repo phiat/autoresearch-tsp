@@ -414,11 +414,14 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_a_c = _euclid(xy, a, c)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
-                pf_ai = _prime_factor(ai + 1, is_prime_f32[a])
-                pf_cj_old = _prime_factor(cj + 1, is_prime_f32[c])
-                pf_cj_new = _prime_factor(cj + 1, is_prime_f32[a_next])
-                gain = pf_ai * d_a_anext + pf_cj_old * d_c_cnext \
-                       - pf_ai * d_a_c - pf_cj_new * d_anext_cnext
+                if (ai + 1) % 10 == 0 or (cj + 1) % 10 == 0:
+                    pf_ai = _prime_factor(ai + 1, is_prime_f32[a])
+                    pf_cj_old = _prime_factor(cj + 1, is_prime_f32[c])
+                    pf_cj_new = _prime_factor(cj + 1, is_prime_f32[a_next])
+                    gain = pf_ai * d_a_anext + pf_cj_old * d_c_cnext \
+                           - pf_ai * d_a_c - pf_cj_new * d_anext_cnext
+                else:
+                    gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
                 if gain > 1e-12:
                     lo, hi = ai + 1, cj
                     while lo < hi:
@@ -434,11 +437,14 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_a_c = _euclid(xy, a, c)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
-                pf_cj = _prime_factor(cj + 1, is_prime_f32[c])
-                pf_ai_old = _prime_factor(ai + 1, is_prime_f32[a])
-                pf_ai_new = _prime_factor(ai + 1, is_prime_f32[c_next])
-                gain = pf_ai_old * d_a_anext + pf_cj * d_c_cnext \
-                       - pf_cj * d_a_c - pf_ai_new * d_anext_cnext
+                if (ai + 1) % 10 == 0 or (cj + 1) % 10 == 0:
+                    pf_cj = _prime_factor(cj + 1, is_prime_f32[c])
+                    pf_ai_old = _prime_factor(ai + 1, is_prime_f32[a])
+                    pf_ai_new = _prime_factor(ai + 1, is_prime_f32[c_next])
+                    gain = pf_ai_old * d_a_anext + pf_cj * d_c_cnext \
+                           - pf_cj * d_a_c - pf_ai_new * d_anext_cnext
+                else:
+                    gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
                 if gain > 1e-12:
                     lo, hi = cj + 1, ai
                     while lo < hi:
