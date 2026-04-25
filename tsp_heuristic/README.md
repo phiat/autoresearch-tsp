@@ -17,7 +17,7 @@ solve.py          — the file the agent edits each cycle
 program.md        — agent operating rules
 AGENTS.md         — tooling inventory + decision table
 ideas.md          — seeded idea library + sample/grow protocol
-recap-N.md        — running summaries (managed by recap-writer subagent)
+recaps/recap-N.md        — running summaries (managed by recap-writer subagent)
 justfile          — common shell recipes (run, metrics, ledger, exp, …)
 pyproject.toml    — deps: numpy, pandas, sympy, scipy, numba
 

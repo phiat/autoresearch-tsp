@@ -24,7 +24,7 @@ just metrics          # pull val_cost / solve_seconds from last run.log
 - **Single-file edits**: each experiment changes only `solve.py`.
   Bundled changes are an anti-pattern and obscure which idea moved
   the score.
-- **Append-only history**: `ideas.md` and `recap-*.md` are
+- **Append-only history**: `ideas.md` and `recaps/recap-*.md` are
   append-only. Older entries are evidence; never rewrite them.
 - **Commit prefixes**: `exp:` for experiment commits, `meta:` for
   tooling / harness commits (managed by the `evolve-tooling` skill).
@@ -40,7 +40,7 @@ just metrics          # pull val_cost / solve_seconds from last run.log
 
 ### Subagents (isolated context — invoke via the Agent tool)
 
-- **`recap-writer`** — updates or creates the next `recap-N.md`. Reads
+- **`recap-writer`** — updates or creates the next `recaps/recap-<N>.md`. Reads
   `results.tsv`, git log, `ideas.md`, the latest recap. Decides
   in-place update vs new file. Only touches recap files.
 - **`paper-researcher`** — expands the idea pool by searching papers,
@@ -82,7 +82,7 @@ just metrics          # pull val_cost / solve_seconds from last run.log
 ### Hooks (deterministic, harness-fired)
 
 - **`block-frozen-edits.sh`** (PreToolUse on Edit/Write/MultiEdit) —
-  hard-block edits to `prepare.py` and `recap-*.md`. The latter
+  hard-block edits to `prepare.py` and `recaps/recap-*.md`. The latter
   belong to `recap-writer`; route through `/recap` instead.
 - **`block-dep-install.sh`** (PreToolUse on Bash) — hard-block
   `uv add` / `pip install` / `poetry add` / `conda install` /
@@ -114,6 +114,6 @@ just metrics          # pull val_cost / solve_seconds from last run.log
 
 - Pushing to remote (no remote configured for this branch).
 - Choosing the run tag — that's a human handshake at session start.
-- Maintaining `recap-*.md` by hand — `recap-writer` owns those.
+- Maintaining `recaps/recap-*.md` by hand — `recap-writer` owns those.
 - Filing beads issues for in-loop experiments — the `results.tsv`
   ledger and git history are sufficient.

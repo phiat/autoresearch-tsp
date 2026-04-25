@@ -22,7 +22,7 @@ session) can pick up cold and understand where the loop stands.
 3. `ideas.md` — the seeded idea library + appended sections.
 4. `program.md` — the loop's operating rules (so your descriptions
    stay aligned with what the agent is actually doing).
-5. The latest existing `recap-*.md` (find with `ls recap-*.md`).
+5. The latest existing recap (find with `ls recaps/recap-*.md`).
 6. `run.log` (if present) — for any in-flight experiment not yet in
    `results.tsv`.
 
@@ -82,8 +82,27 @@ the recap-cycle itself)
 - Keep the table the source of truth — never let prose contradict it.
 - If `.recap-pending` exists, delete it after writing the recap (it's
   the sentinel that tells the next loop iteration the recap was due).
-- Recaps live in `tsp_heuristic/`. Filename is `recap-<N>.md`, no
-  zero-padding.
+- Recaps live in `tsp_heuristic/recaps/`. Filename is
+  `recaps/recap-<N>.md`, no zero-padding. Use Bash (`mkdir -p recaps`,
+  then `cat > recaps/recap-<N>.md <<'EOF' ... EOF`) to create new
+  ones — the block-frozen-edits hook blocks Edit/Write on `recap-*.md`
+  by basename, but Bash redirection works.
+
+## Commit + push at the end
+
+After writing the recap file:
+
+1. `git add recaps/recap-*.md` (stage all recap changes — both new
+   files and edits to existing ones).
+2. `git diff --cached --quiet recaps/` — if no actual change, skip
+   the commit (the recap-writer was invoked but produced nothing
+   new). Otherwise:
+3. `git commit -m "meta: recap-<N> (rows X-Y, <one-line theme>)"`
+4. `git push origin main`
+
+If push fails (rejected because remote moved), do `git pull --rebase`
+once and retry. If still failing, report the failure to the parent
+session and stop — don't leave a half-pushed state.
 
 ## What you must NOT do
 

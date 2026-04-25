@@ -132,7 +132,12 @@ Same shape as `tsp_heuristic/program.md`:
    *revert commit* on top (does not rewrite history) so it's safe even
    when the `tsp_heuristic` loop is committing to the same branch
    concurrently.
-8. Check `.recap-pending`; run `/recap` if present.
+8. **Hard prerequisite — recap check.** Before picking the next
+   idea, **stat `.recap-pending`**. If it exists, **stop the cycle
+   here**, run `/recap` (the `recap-writer` subagent writes
+   `recaps/recap-<N>.md`, commits + pushes it, and deletes the
+   sentinel), and only resume after it completes. Not optional —
+   the recap is the loop's audit trail.
 
 ## Idea library (`ideas.md`)
 

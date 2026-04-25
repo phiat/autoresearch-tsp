@@ -43,7 +43,7 @@ just metrics          # pull val_cost / training_seconds from run.log
 - **Single primary file edited**: `solve.py`. Helpers (e.g. `model.py`,
   `harvest.py`, `train.py`) are allowed but `solve.py` stays the
   entry point.
-- **Append-only history**: `ideas.md`, `recap-*.md`. Never rewrite.
+- **Append-only history**: `ideas.md`, `recaps/recap-*.md`. Never rewrite.
 - **Commit prefixes**: `exp:` for experiment commits, `meta:` for
   tooling/harness changes (managed by the `evolve-tooling` skill).
 - **Differentiator discipline**: every `keep` should advance the
@@ -58,7 +58,7 @@ just metrics          # pull val_cost / training_seconds from run.log
 
 ### Subagents (isolated context — invoke via Agent tool)
 
-- **`recap-writer`** — manages `recap-*.md`. Same shape as
+- **`recap-writer`** — manages `recaps/recap-*.md`. Same shape as
   `tsp_heuristic/`'s but reads from this project's `results.tsv` and
   git log.
 - **`paper-researcher`** — sources literature ideas into `ideas.md`.
@@ -100,7 +100,7 @@ Project-specific:
 
 ### Hooks
 
-- **`block-frozen-edits.sh`** — guards `prepare.py` and `recap-*.md`.
+- **`block-frozen-edits.sh`** — guards `prepare.py` and `recaps/recap-*.md`.
 - **`block-dep-install.sh`** — gates new dep installation.
 - **`recap-tick.sh`** — writes `.recap-pending` every 4 logged cycles.
 

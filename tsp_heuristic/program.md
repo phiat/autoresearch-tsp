@@ -174,9 +174,16 @@ LOOP FOREVER:
    followed by a `Revert "exp: ..."` commit; the working tree returns
    to the prior state. This shape is safe when the `tsp_neural` loop
    is committing to the same branch concurrently.
-10. **Check `.recap-pending`**: if it exists, run `/recap` before
-    starting the next cycle. The `recap-writer` subagent updates the
-    recap and clears the sentinel.
+10. **Hard prerequisite — recap check.** Before picking the next
+    idea, **stat `.recap-pending`**. If it exists:
+    - **Stop the cycle here.**
+    - Run `/recap`. The `recap-writer` subagent will write
+      `recaps/recap-<N>.md`, commit + push it, and delete the
+      sentinel.
+    - Only after `/recap` completes successfully may you start the
+      next experiment.
+    The recap is not optional — it is the loop's audit trail and
+    enables the human to pick up cold across sessions.
 
 **Timeout**: each run should take ~5 min solver + a few seconds for load
 and scoring. If a run exceeds 10 minutes wall-clock total, kill it and
