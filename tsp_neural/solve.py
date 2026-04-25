@@ -223,141 +223,6 @@ def run_or_opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
 
 
 @njit(cache=True, fastmath=True)
-def or_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
-                        W1, b1, W2, b2, w3, b3_scalar, mu, sd):
-    """Or-opt sweep with the 2-opt MLP transferred as Or-opt candidate ranker.
-
-    Feature mapping (approximate — 2-opt has 4 incident edges, Or-opt has 6):
-      d_a_anext  ← d(prev_x, x)
-      d_c_cnext  ← d(c_prev, c)
-      d_a_c      ← d(x, c)
-      d_anext_cnext ← d(c_prev, x)
-      primes     ← (prev_x, x, c_prev, c)
-      log_pos_delta ← |cj - xi|
-
-    Iterate K candidates by descending score; take first improving."""
-    n = len(xy)
-    K = candidates.shape[1]
-    H = W1.shape[0]
-    nin = W1.shape[1]
-
-    feats = np.empty(nin, dtype=np.float32)
-    h1 = np.empty(H, dtype=np.float32)
-    h2 = np.empty(H, dtype=np.float32)
-    scores = np.empty(K, dtype=np.float32)
-    valid = np.empty(K, dtype=np.bool_)
-    used = np.empty(K, dtype=np.bool_)
-    NEG_INF = np.float32(-1e30)
-
-    n_imp = 0
-    n_inf = 0
-    for xi in range(1, n):
-        x = tour[xi]
-        prev = tour[xi - 1]
-        nxt = tour[xi + 1]
-        d_prev_x = _euclid(xy, prev, x)
-        d_x_next = _euclid(xy, x, nxt)
-        d_prev_next = _euclid(xy, prev, nxt)
-        rem_gain = d_prev_x + d_x_next - d_prev_next
-        if rem_gain <= 1e-12:
-            continue
-
-        for kk in range(K):
-            c = candidates[x, kk]
-            if c == 0 or c == prev or c == nxt:
-                valid[kk] = False
-                scores[kk] = NEG_INF
-                continue
-            cj = pos[c]
-            if cj == 0 or cj == xi:
-                valid[kk] = False
-                scores[kk] = NEG_INF
-                continue
-            c_prev = tour[cj - 1]
-            if c_prev == x:
-                valid[kk] = False
-                scores[kk] = NEG_INF
-                continue
-            d_cprev_c = _euclid(xy, c_prev, c)
-            d_cprev_x = _euclid(xy, c_prev, x)
-            d_x_c = _euclid(xy, x, c)
-            feats[0] = (d_prev_x - mu[0]) / sd[0]
-            feats[1] = (d_cprev_c - mu[1]) / sd[1]
-            feats[2] = (d_x_c - mu[2]) / sd[2]
-            feats[3] = (d_cprev_x - mu[3]) / sd[3]
-            feats[4] = (is_prime_f32[prev] - mu[4]) / sd[4]
-            feats[5] = (is_prime_f32[x] - mu[5]) / sd[5]
-            feats[6] = (is_prime_f32[c_prev] - mu[6]) / sd[6]
-            feats[7] = (is_prime_f32[c] - mu[7]) / sd[7]
-            pd = cj - xi
-            if pd < 0:
-                pd = -pd
-            feats[8] = (math.log1p(pd) - mu[8]) / sd[8]
-            scores[kk] = _mlp_score(feats, W1, b1, W2, b2, w3, b3_scalar, h1, h2)
-            valid[kk] = True
-            n_inf += 1
-
-        for kk in range(K):
-            used[kk] = False
-
-        accepted = False
-        for slot in range(K):
-            if accepted:
-                break
-            best_kk = -1
-            best_score = NEG_INF
-            for kk in range(K):
-                if not used[kk] and valid[kk] and scores[kk] > best_score:
-                    best_kk = kk
-                    best_score = scores[kk]
-            if best_kk < 0:
-                break
-            used[best_kk] = True
-
-            c = candidates[x, best_kk]
-            cj = pos[c]
-            c_prev = tour[cj - 1]
-            d_cprev_c = _euclid(xy, c_prev, c)
-            d_cprev_x = _euclid(xy, c_prev, x)
-            d_x_c = _euclid(xy, x, c)
-            ins_gain = d_cprev_c - d_cprev_x - d_x_c
-            total = rem_gain + ins_gain
-            if total > 1e-12:
-                if xi < cj:
-                    for i in range(xi, cj - 1):
-                        tour[i] = tour[i + 1]
-                        pos[tour[i]] = i
-                    tour[cj - 1] = x
-                    pos[x] = cj - 1
-                else:
-                    for i in range(xi, cj, -1):
-                        tour[i] = tour[i - 1]
-                        pos[tour[i]] = i
-                    tour[cj] = x
-                    pos[x] = cj
-                n_imp += 1
-                accepted = True
-    return n_imp, n_inf
-
-
-def run_or_opt_ranked(tour, pos, xy, is_prime_f32, candidates,
-                     weights, budget, max_sweeps=10_000):
-    W1, b1, W2, b2, w3, b3_scalar, mu, sd = weights
-    sweeps = 0
-    total_inf = 0
-    while sweeps < max_sweeps and not budget.expired():
-        n_imp, n_inf = or_opt_sweep_ranked(
-            tour, pos, xy, is_prime_f32, candidates,
-            W1, b1, W2, b2, w3, b3_scalar, mu, sd,
-        )
-        sweeps += 1
-        total_inf += n_inf
-        if n_imp == 0:
-            break
-    return sweeps, total_inf
-
-
-@njit(cache=True, fastmath=True)
 def two_opt_sweep_harvest(tour, pos, xy, candidates,
                           buf_a, buf_a_next, buf_c, buf_c_next,
                           buf_pos_delta, buf_gain, buf_accepted, count_arr):
@@ -659,11 +524,11 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         return tour, inference_calls, restarts
     elif ranked_weights is not None:
         is_prime_f32 = is_prime.astype(np.float32)
-        print("  running 2-opt (RANK, I5) + Or-opt (RANK, transferred MLP) + ILS ...")
+        print("  running 2-opt (RANK, I5) + Or-opt (classical) + ILS ...")
 
         def vnd(t, p):
             """Variable neighborhood descent: alternate learned 2-opt and
-            learned-ranked Or-opt until both find no improvement."""
+            classical Or-opt until both find no improvement."""
             total_2opt_sweeps = 0
             total_or_sweeps = 0
             total_inf = 0
@@ -675,9 +540,8 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
                 total_inf += ninf
                 if budget.expired():
                     break
-                so, nor_inf = run_or_opt_ranked(t, p, xy, is_prime_f32, candidates, ranked_weights, budget)
+                so = run_or_opt(t, p, xy, candidates, budget)
                 total_or_sweeps += so
-                total_inf += nor_inf
                 if so <= 1 and outer > 1:
                     break  # 2-opt also converged on prev iter; both done
             return total_2opt_sweeps, total_or_sweeps, total_inf
