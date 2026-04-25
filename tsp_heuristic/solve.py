@@ -492,7 +492,7 @@ def solve(xy, is_prime, budget):
             elif r < 2.0 / 3.0:
                 cand = segment_shift(cand, rng)
             else:
-                cand = lns_perturb(cand, rng, xy, candidates, frac=0.005)
+                cand = lns_perturb(cand, rng, xy, candidates, frac=0.010)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
         run_local(cand, pos, xy, candidates, budget)
         if budget.expired():
