@@ -12,60 +12,6 @@ and the [marimo walkthrough video](https://www.youtube.com/watch?v=bMoNOb0iXpA).
 
 ## The two projects
 
-<<<<<<< Updated upstream
-## Layout
-
-```
-tsp_research/         the active loop (harness + agent tooling)
-autoresearch/         vendored upstream (karpathy's repo, reference only)
-.beads/               beads issue tracker (project memory)
-AGENTS.md, CLAUDE.md  agent guidance for the outer repo
-```
-
-The interesting work happens in `tsp_research/` — see
-[`tsp_research/README.md`](tsp_research/README.md) for setup,
-[`tsp_research/AGENTS.md`](tsp_research/AGENTS.md) for the agent tooling
-inventory, and [`tsp_research/program.md`](tsp_research/program.md) for the
-autonomous loop's operating rules.
-
-## Quick start
-
-```bash
-# 1. Unzip the Kaggle archive into tsp_research/data/ so cities.csv exists
-# 2. Sync deps and smoke-test
-cd tsp_research
-uv sync
-just data         # smoke test: loads cities, scores identity tour
-just run          # baseline solver (~5 min)
-just metrics      # pull val_cost / solve_seconds from run.log
-```
-
-Then point a fresh Claude Code session at `tsp_research/` and prompt it
-with: *"read AGENTS.md and program.md, then start the loop on branch
-`tsp/<tag>`."* The agent will sample ideas from `ideas.md`, edit
-`solve.py`, run experiments, log results, and iterate. Every 4 cycles a
-hook flags a recap-pending sentinel; the agent runs `/recap` to update
-the running `recap-N.md` series.
-
-## What's in the toolset
-
-`tsp_research/.claude/` ships:
-
-- **Subagents**: `recap-writer` (maintains `recap-*.md`), `paper-researcher`
-  (sources fresh ideas from literature into `ideas.md`).
-- **Skills**: `postmortem` (bottleneck classification), `profile-solver`
-  (cProfile hotspot analysis), `compare-runs` (diff two experiment commits +
-  their deltas), `algo-blueprint` (paper → patch plan), `evolve-tooling`
-  (the meta-skill for extending `.claude/` itself).
-- **Slash command**: `/recap`.
-- **Hooks**: `block-frozen-edits` (PreToolUse — guards `prepare.py` and
-  `recap-*.md`), `block-dep-install` (PreToolUse on Bash — gates dep
-  additions), `recap-tick` (PostToolUse — writes `.recap-pending` every 4
-  ledger rows).
-- **Justfile**: 17 recipes wrapping the loop's common shell operations
-  (`run`, `metrics`, `ledger`, `exp`, `log`, `revert`, `status`, `tools`,
-  `score`, `clean`, …).
-=======
 |                  | [`tsp_research/`](tsp_research/)        | [`tsp_neural/`](tsp_neural/)                  |
 |------------------|------------------------------------------|------------------------------------------------|
 | **Approach**     | classical heuristic search               | neural-guided local search                     |
@@ -92,7 +38,7 @@ tsp_research/      classical loop (live; producing real results)
 tsp_neural/        neural-guided loop (scaffolded; first cycle TBD)
 autoresearch/      vendored upstream (karpathy's repo, reference only)
 .beads/            beads issue tracker (project memory; gitignored)
-AGENTS.md         agent guidance for the outer repo
+AGENTS.md          agent guidance for the outer repo
 ```
 
 ## Running both loops in parallel
@@ -120,7 +66,6 @@ uv sync && just data && just run        # smoke test (downloads PyTorch first ti
 The two sessions never collide on `HEAD`. Branches are mutually
 visible (handy for `compare-runs` across paradigms once both have
 data); `results.tsv` and other artefacts are per-worktree-local.
->>>>>>> Stashed changes
 
 ## Status
 
