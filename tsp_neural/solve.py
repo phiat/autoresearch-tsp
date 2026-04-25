@@ -46,8 +46,6 @@ import harvest as _harvest
 
 K_NEIGHBORS = 10            # baseline 2-opt and NN seed
 K_NEIGHBORS_HARVEST = 30    # harvest mode logs the wider pool to cover ranker OOD region
-K_NEIGHBORS_RANKED = 30     # ranker scores from this wider pool ...
-K_USE_RANKED = 10           # ... but visits only the top this many by model score
 HARVEST = os.environ.get("HARVEST", "0") == "1"
 MODE = os.environ.get("MODE", "solve")
 RANK = os.environ.get("RANK", "auto")  # "auto" => use ckpt if found; "0" force baseline; "1" require ckpt
@@ -252,23 +250,20 @@ def _mlp_score(x, W1, b1, W2, b2, w3, b3_scalar, h1, h2):
 
 
 @njit(cache=True, fastmath=True)
-def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, k_use,
+def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                          W1, b1, W2, b2, w3, b3_scalar, mu, sd):
-    """2-opt sweep where MLP scores all K_in candidates, then visits at most
-    `k_use` of them in descending score order; one accept per ai per sweep
-    (the cycle-3-keep regime). When K_in == k_use this is plain re-rank;
-    when K_in > k_use the model is also pruning a wider pool."""
+    """2-opt sweep where candidates per ai are visited in descending MLP score
+    order. Best-improvement-in-K (one accept per ai per sweep)."""
     n = len(xy)
-    K_in = candidates.shape[1]
+    K = candidates.shape[1]
     H = W1.shape[0]
     nin = W1.shape[1]
 
     feats = np.empty(nin, dtype=np.float32)
     h1 = np.empty(H, dtype=np.float32)
     h2 = np.empty(H, dtype=np.float32)
-    scores = np.empty(K_in, dtype=np.float32)
-    valid = np.empty(K_in, dtype=np.bool_)
-    used = np.empty(K_in, dtype=np.bool_)
+    scores = np.empty(K, dtype=np.float32)
+    valid = np.empty(K, dtype=np.bool_)
 
     NEG_INF = np.float32(-1e30)
     n_imp = 0
@@ -278,7 +273,8 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, k_use,
         a_next = tour[ai + 1]
         d_a_anext = _euclid(xy, a, a_next)
 
-        for kk in range(K_in):
+        # Score all K candidates with current tour state.
+        for kk in range(K):
             c = candidates[a, kk]
             if c == 0:
                 valid[kk] = False
@@ -311,64 +307,55 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, k_use,
             valid[kk] = True
             n_inf += 1
 
-        for kk in range(K_in):
-            used[kk] = False
+        # Pick best valid candidate by score.
+        best_kk = -1
+        best_score = NEG_INF
+        for kk in range(K):
+            if valid[kk] and scores[kk] > best_score:
+                best_kk = kk
+                best_score = scores[kk]
+        if best_kk < 0:
+            continue
 
-        accepted = False
-        for slot in range(k_use):
-            if accepted:
-                break
-            best_kk = -1
-            best_score = NEG_INF
-            for kk in range(K_in):
-                if not used[kk] and valid[kk] and scores[kk] > best_score:
-                    best_kk = kk
-                    best_score = scores[kk]
-            if best_kk < 0:
-                break
-            used[best_kk] = True
-
-            c = candidates[a, best_kk]
-            cj = pos[c]
-            if cj > ai + 1 and cj < n:
-                c_next = tour[cj + 1]
-                gain = d_a_anext + _euclid(xy, c, c_next) \
-                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
-                if gain > 1e-12:
-                    lo, hi = ai + 1, cj
-                    while lo < hi:
-                        x, y = tour[lo], tour[hi]
-                        tour[lo], tour[hi] = y, x
-                        pos[y], pos[x] = lo, hi
-                        lo += 1
-                        hi -= 1
-                    n_imp += 1
-                    accepted = True
-            elif cj >= 1 and cj < ai - 1:
-                c_next = tour[cj + 1]
-                gain = d_a_anext + _euclid(xy, c, c_next) \
-                       - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
-                if gain > 1e-12:
-                    lo, hi = cj + 1, ai
-                    while lo < hi:
-                        x, y = tour[lo], tour[hi]
-                        tour[lo], tour[hi] = y, x
-                        pos[y], pos[x] = lo, hi
-                        lo += 1
-                        hi -= 1
-                    n_imp += 1
-                    accepted = True
+        c = candidates[a, best_kk]
+        cj = pos[c]
+        if cj > ai + 1 and cj < n:
+            c_next = tour[cj + 1]
+            gain = d_a_anext + _euclid(xy, c, c_next) \
+                   - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+            if gain > 1e-12:
+                lo, hi = ai + 1, cj
+                while lo < hi:
+                    x, y = tour[lo], tour[hi]
+                    tour[lo], tour[hi] = y, x
+                    pos[y], pos[x] = lo, hi
+                    lo += 1
+                    hi -= 1
+                n_imp += 1
+        elif cj >= 1 and cj < ai - 1:
+            c_next = tour[cj + 1]
+            gain = d_a_anext + _euclid(xy, c, c_next) \
+                   - _euclid(xy, a, c) - _euclid(xy, a_next, c_next)
+            if gain > 1e-12:
+                lo, hi = cj + 1, ai
+                while lo < hi:
+                    x, y = tour[lo], tour[hi]
+                    tour[lo], tour[hi] = y, x
+                    pos[y], pos[x] = lo, hi
+                    lo += 1
+                    hi -= 1
+                n_imp += 1
     return n_imp, n_inf
 
 
-def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates, k_use,
+def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
                     weights, budget, max_sweeps=10_000):
     W1, b1, W2, b2, w3, b3_scalar, mu, sd = weights
     sweeps = 0
     total_inf = 0
     while sweeps < max_sweeps and not budget.expired():
         n_imp, n_inf = two_opt_sweep_ranked(
-            tour, pos, xy, is_prime_f32, candidates, k_use,
+            tour, pos, xy, is_prime_f32, candidates,
             W1, b1, W2, b2, w3, b3_scalar, mu, sd,
         )
         sweeps += 1
@@ -419,7 +406,7 @@ def run_2opt_harvest(tour, pos, xy, candidates, budget, bufs, max_sweeps=10_000)
 def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
     print("  building candidate list (cKDTree) ...")
     tree = cKDTree(xy)
-    k_query = max(K_NEIGHBORS, K_NEIGHBORS_HARVEST, K_NEIGHBORS_RANKED) + 1
+    k_query = max(K_NEIGHBORS, K_NEIGHBORS_HARVEST) + 1
     _, idx = tree.query(xy, k=k_query)
     candidates_full = idx[:, 1:].astype(np.int32)
     candidates = candidates_full[:, :K_NEIGHBORS]
@@ -441,12 +428,10 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
         print(f"  running 2-opt (HARVEST=1, K={K_NEIGHBORS_HARVEST}, logging candidates) ...")
         sweeps = run_2opt_harvest(tour, pos, xy, candidates_h, budget, harvest_bufs)
     elif ranked_weights is not None:
-        candidates_ranker = candidates_full[:, :K_NEIGHBORS_RANKED]
-        print(f"  running 2-opt (RANK, K_in={K_NEIGHBORS_RANKED} → top {K_USE_RANKED} by MLP score, one accept per ai) ...")
+        print("  running 2-opt (RANK, MLP-scored candidate order) ...")
         is_prime_f32 = is_prime.astype(np.float32)
         sweeps, inference_calls = run_2opt_ranked(
-            tour, pos, xy, is_prime_f32, candidates_ranker,
-            K_USE_RANKED, ranked_weights, budget,
+            tour, pos, xy, is_prime_f32, candidates, ranked_weights, budget,
         )
     else:
         print("  running 2-opt ...")
