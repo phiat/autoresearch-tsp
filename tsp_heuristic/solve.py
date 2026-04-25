@@ -315,7 +315,7 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
                 break
         total_2opt += s2
         any_or = 0
-        for L in (5, 4, 3, 2, 1):
+        for L in (1, 2, 3, 4, 5):
             if budget.expired():
                 break
             sL = 0
