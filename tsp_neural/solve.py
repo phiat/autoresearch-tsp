@@ -585,16 +585,35 @@ def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
 # Parallelism is across independent tours, not within a single sweep.
 # ---------------------------------------------------------------------------
 
+def _scramble_window(tour, rng, win=50):
+    """C13 LNS perturbation: scramble a contiguous tour window of `win` cities.
+    Returns a new tour. Endpoints (city 0) preserved at start/end."""
+    n_inner = len(tour) - 1
+    p = int(rng.integers(1, n_inner - win))
+    new = tour.copy()
+    seg = new[p:p + win].copy()
+    rng.shuffle(seg)
+    new[p:p + win] = seg
+    return new
+
+
 def _ils_worker_neural(args):
     """Top-level (must be picklable) worker for multiprocessing.Pool. Runs one
-    ILS iteration: 2x double-bridge + VND local search up to worker_budget_sec,
-    score, return (val_cost, tour, inference_calls). Reads xy / candidates /
-    weights from module globals set by the parent (inherited via fork COW)."""
-    seed_tour, rng_seed, worker_budget_sec = args
+    ILS iteration: perturb + VND local search up to worker_budget_sec, score,
+    return (val_cost, tour, inference_calls). Reads xy / candidates / weights
+    from module globals set by the parent (inherited via fork COW).
+
+    perturb_kind: 'db' = 2x double-bridge (cycle 15 sweet spot),
+                  'lns' = C13 windowed scramble (50 cities — cycle 42 win=200
+                  was too destructive)."""
+    seed_tour, rng_seed, worker_budget_sec, perturb_kind = args
     rng = np.random.default_rng(rng_seed)
 
-    new_tour = double_bridge(seed_tour, rng)
-    new_tour = double_bridge(new_tour, rng)
+    if perturb_kind == 'lns':
+        new_tour = _scramble_window(seed_tour, rng, win=50)
+    else:
+        new_tour = double_bridge(seed_tour, rng)
+        new_tour = double_bridge(new_tour, rng)
 
     n = _W_XY.shape[0]
     pos = np.empty(n, dtype=np.int64)
@@ -641,9 +660,16 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
             if budget.remaining() < worker_budget_sec + 2.0:
                 break
 
+            # Cycle 43 PILSlns50: 6 workers do 2x double-bridge sweet spot,
+            # 2 do small (50-city) windowed scramble. Larger 200-city scramble
+            # (cycle 42) was too destructive; reducing window + reducing share
+            # to 1/4 hedges to test whether ANY localized destroy/repair helps
+            # alongside double-bridge.
+            kind_schedule = ['db', 'db', 'db', 'db', 'db', 'db', 'lns', 'lns']
             args_list = [
-                (best_tour, int(rng.integers(0, 2**31 - 1)), worker_budget_sec)
-                for _ in range(workers)
+                (best_tour, int(rng.integers(0, 2**31 - 1)), worker_budget_sec,
+                 kind_schedule[i % len(kind_schedule)])
+                for i in range(workers)
             ]
             results = pool.map(_ils_worker_neural, args_list)
             batch_num += 1
