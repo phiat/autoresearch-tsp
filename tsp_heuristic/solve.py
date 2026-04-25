@@ -466,15 +466,31 @@ def solve(xy, is_prime, budget):
     candidates = build_candidates(xy, K_NEIGHBORS)
     print(f"  candidates built in {time.perf_counter() - t0:.2f}s")
 
-    print("  building fast NN tour ...")
+    print("  building multi-start NN tours ...")
     t0 = time.perf_counter()
-    tour, fallbacks = fast_nn(xy, candidates, START_CITY)
-    print(f"  NN done in {time.perf_counter() - t0:.2f}s ({fallbacks} brute fallbacks), remaining {budget.remaining():.1f}s")
+    n = xy.shape[0]
+    seed_rng = np.random.default_rng(0xC6C6)
+    n_starts = 5
+    starts = [START_CITY] + [int(seed_rng.integers(1, n)) for _ in range(n_starts - 1)]
+    best_seed_len = 1e30
+    tour = None
+    fallbacks = 0
+    for s in starts:
+        cand_tour, fb = fast_nn(xy, candidates, s)
+        if s != START_CITY:
+            idx = int(np.where(cand_tour == START_CITY)[0][0])
+            cand_tour = np.concatenate([cand_tour[idx:-1], cand_tour[:idx + 1]])
+        diffs = xy[cand_tour[1:]] - xy[cand_tour[:-1]]
+        length = float(np.sqrt((diffs * diffs).sum(axis=1)).sum())
+        if length < best_seed_len:
+            best_seed_len = length
+            tour = cand_tour
+            fallbacks = fb
+    print(f"  multi-start NN: {n_starts} seeds, best len {best_seed_len:.0f}, took {time.perf_counter() - t0:.2f}s ({fallbacks} brute fallbacks), remaining {budget.remaining():.1f}s")
 
     if budget.remaining() < 1:
         return tour
 
-    n = len(xy)
     pos = np.empty(n, dtype=np.int64)
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
