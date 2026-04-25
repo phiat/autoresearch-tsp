@@ -77,9 +77,8 @@ def _euclid(xy, a, b):
 
 
 @njit(cache=True, fastmath=True)
-def two_opt_sweep(tour, pos, xy, candidates):
-    """One best-improvement pass. For each city a, scans all candidates and applies
-    only the single highest-gain move (across both case A and case B)."""
+def two_opt_sweep(tour, pos, xy, candidates, edge_penalty, lam):
+    """One best-improvement pass with GLS augmented gain (lam * penalty[a, kk])."""
     n = len(xy)
     K = candidates.shape[1]
     n_improvements = 0
@@ -100,7 +99,7 @@ def two_opt_sweep(tour, pos, xy, candidates):
                 d_a_c = _euclid(xy, a, c)
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
-                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
+                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext - lam * edge_penalty[a, kk]
                 if gain > best_gain:
                     best_gain = gain
                     best_kk = kk
@@ -110,7 +109,7 @@ def two_opt_sweep(tour, pos, xy, candidates):
                 d_a_c = _euclid(xy, a, c)
                 d_c_cnext = _euclid(xy, c, c_next)
                 d_anext_cnext = _euclid(xy, a_next, c_next)
-                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext
+                gain = d_a_anext + d_c_cnext - d_a_c - d_anext_cnext - lam * edge_penalty[a, kk]
                 if gain > best_gain:
                     best_gain = gain
                     best_kk = kk
@@ -142,6 +141,35 @@ def build_candidates(xy, k):
     tree = cKDTree(xy)
     _, idx = tree.query(xy, k=k + 1)
     return idx[:, 1:].astype(np.int32)
+
+
+@njit(cache=True, fastmath=True)
+def gls_update(tour, xy, candidates, edge_penalty):
+    """Bump the penalty of the max-utility candidate edge in the current tour
+    (utility = length / (1 + penalty)). GLS feature-selection rule."""
+    n_tour = len(tour) - 1
+    K = candidates.shape[1]
+    max_util = 0.0
+    max_a = -1
+    max_kk = -1
+    for i in range(n_tour):
+        a = tour[i]
+        b = tour[i + 1]
+        kk_found = -1
+        for kk in range(K):
+            if candidates[a, kk] == b:
+                kk_found = kk
+                break
+        if kk_found < 0:
+            continue
+        length = _euclid(xy, a, b)
+        util = length / (1.0 + edge_penalty[a, kk_found])
+        if util > max_util:
+            max_util = util
+            max_a = a
+            max_kk = kk_found
+    if max_a >= 0:
+        edge_penalty[max_a, max_kk] += 1
 
 
 @njit(cache=True, fastmath=True)
@@ -300,8 +328,9 @@ def prime_swap_pass(tour, pos, xy, is_prime, candidates):
     return n_imp
 
 
-def run_local(tour, pos, xy, candidates, budget, max_outer=20):
-    """Alternate 2-opt and Or-{1,2,3} sweeps until all converge or budget exhausted."""
+def run_local(tour, pos, xy, candidates, budget, edge_penalty, lam, max_outer=20):
+    """Alternate GLS-augmented 2-opt and (plain) Or-{1..5} sweeps until convergence;
+    bumps max-utility tour edge's penalty at the end."""
     total_2opt = 0
     total_or = 0
     for outer in range(max_outer):
@@ -309,7 +338,7 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
             break
         s2 = 0
         while not budget.expired():
-            n_imp = two_opt_sweep(tour, pos, xy, candidates)
+            n_imp = two_opt_sweep(tour, pos, xy, candidates, edge_penalty, lam)
             s2 += 1
             if n_imp == 0:
                 break
@@ -329,6 +358,8 @@ def run_local(tour, pos, xy, candidates, budget, max_outer=20):
                 any_or += 1
         if s2 == 1 and any_or == 0:
             break
+    if not budget.expired():
+        gls_update(tour, xy, candidates, edge_penalty)
     return total_2opt, total_or
 
 
@@ -478,8 +509,11 @@ def solve(xy, is_prime, budget):
     pos = np.empty(n, dtype=np.int64)
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
-    print("  running 2-opt + Or-{1,2,3} to local optimum ...")
-    s2, sor = run_local(tour, pos, xy, candidates, budget)
+    edge_penalty = np.zeros((n, K_NEIGHBORS), dtype=np.float32)
+    GLS_LAMBDA = 0.1
+
+    print("  running GLS-augmented 2-opt + Or-{1..5} to local optimum ...")
+    s2, sor = run_local(tour, pos, xy, candidates, budget, edge_penalty, GLS_LAMBDA)
     print(f"  local converged: {s2} 2-opt sweeps, {sor} or-opt sweeps, remaining {budget.remaining():.1f}s")
 
     best_tour = tour.copy()
@@ -516,7 +550,7 @@ def solve(xy, is_prime, budget):
             else:
                 cand = lns_perturb_prime(cand, rng, xy, candidates, is_prime, frac=0.010, bias=8.0)
         pos[cand[:-1]] = np.arange(n, dtype=np.int64)
-        run_local(cand, pos, xy, candidates, budget)
+        run_local(cand, pos, xy, candidates, budget, edge_penalty, GLS_LAMBDA)
         if budget.expired():
             break
         new_cost = score_tour(cand, xy, is_prime)
