@@ -1,8 +1,8 @@
 """
 Santa 2018 TSP solver — the agent's playground.
 
-Current experiment: C5 — Hilbert space-filling-curve seed (replaces NN seed);
-local search via 2-opt + Or-opt with k=4 cKDTree candidate list, ILS w/ NN restarts.
+Current experiment: L5 — numba-jit'd 2-opt with k=10 cKDTree candidate list,
+seeded by nearest-neighbor from city 0.
 """
 
 import time
@@ -63,59 +63,6 @@ def fast_nn(xy, candidates, start):
         visited[nxt] = True
         cur = nxt
     return tour, fallbacks
-
-
-# ---------------------------------------------------------------------------
-# Hilbert space-filling-curve seed
-# ---------------------------------------------------------------------------
-
-@njit(cache=True)
-def _xy2d(order, x, y):
-    d = 0
-    s = 1 << (order - 1)
-    while s > 0:
-        rx = 1 if (x & s) > 0 else 0
-        ry = 1 if (y & s) > 0 else 0
-        d += s * s * ((3 * rx) ^ ry)
-        if ry == 0:
-            if rx == 1:
-                x = s - 1 - x
-                y = s - 1 - y
-            tmp = x
-            x = y
-            y = tmp
-        s >>= 1
-    return d
-
-
-@njit(cache=True)
-def _hilbert_keys(xi, yi, bits):
-    n = xi.shape[0]
-    keys = np.empty(n, dtype=np.int64)
-    for i in range(n):
-        keys[i] = _xy2d(bits, xi[i], yi[i])
-    return keys
-
-
-def hilbert_seed_tour(xy, start_city):
-    """Tour built by sorting cities along a 2D Hilbert curve, then rolled so
-    start_city is first (and repeated at the end)."""
-    n = xy.shape[0]
-    x_min = float(xy[:, 0].min())
-    y_min = float(xy[:, 1].min())
-    span = float(max(xy[:, 0].max() - x_min, xy[:, 1].max() - y_min))
-    BITS = 16
-    scale = ((1 << BITS) - 1) / span
-    xi = ((xy[:, 0] - x_min) * scale).astype(np.int64)
-    yi = ((xy[:, 1] - y_min) * scale).astype(np.int64)
-    keys = _hilbert_keys(xi, yi, BITS)
-    order = np.argsort(keys, kind='stable').astype(np.int64)
-    start_idx = int(np.where(order == start_city)[0][0])
-    rolled = np.concatenate([order[start_idx:], order[:start_idx]])
-    tour = np.empty(n + 1, dtype=np.int64)
-    tour[:-1] = rolled
-    tour[-1] = start_city
-    return tour
 
 
 # ---------------------------------------------------------------------------
@@ -420,10 +367,10 @@ def solve(xy, is_prime, budget):
     candidates = build_candidates(xy, K_NEIGHBORS)
     print(f"  candidates built in {time.perf_counter() - t0:.2f}s")
 
-    print("  building Hilbert seed tour ...")
+    print("  building fast NN tour ...")
     t0 = time.perf_counter()
-    tour = hilbert_seed_tour(xy, START_CITY)
-    print(f"  Hilbert done in {time.perf_counter() - t0:.2f}s, remaining {budget.remaining():.1f}s")
+    tour, fallbacks = fast_nn(xy, candidates, START_CITY)
+    print(f"  NN done in {time.perf_counter() - t0:.2f}s ({fallbacks} brute fallbacks), remaining {budget.remaining():.1f}s")
 
     if budget.remaining() < 1:
         return tour
