@@ -27,27 +27,42 @@ K_NEIGHBORS = 10
 # Construction
 # ---------------------------------------------------------------------------
 
-def nearest_neighbor(xy, budget):
-    n = len(xy)
-    visited = np.zeros(n, dtype=bool)
+@njit(cache=True, fastmath=True)
+def fast_nn(xy, candidates, start):
+    """Greedy NN tour using a precomputed k-NN candidate list. When all of a
+    city's k neighbours are already visited, fall back to a numba brute scan."""
+    n = xy.shape[0]
+    K = candidates.shape[1]
+    visited = np.zeros(n, dtype=np.bool_)
     tour = np.empty(n + 1, dtype=np.int64)
-    tour[0] = START_CITY
-    tour[-1] = START_CITY
-    visited[START_CITY] = True
-    cur = START_CITY
+    tour[0] = start
+    tour[-1] = start
+    visited[start] = True
+    cur = start
+    fallbacks = 0
     for step in range(1, n):
-        if budget.expired():
-            remaining = np.where(~visited)[0]
-            tour[step:step + len(remaining)] = remaining
-            return tour
-        d = xy - xy[cur]
-        d2 = (d * d).sum(axis=1)
-        d2[visited] = np.inf
-        nxt = int(np.argmin(d2))
+        nxt = -1
+        for kk in range(K):
+            c = candidates[cur, kk]
+            if not visited[c]:
+                nxt = c
+                break
+        if nxt < 0:
+            best_d = 1e30
+            for i in range(n):
+                if visited[i]:
+                    continue
+                dx = xy[i, 0] - xy[cur, 0]
+                dy = xy[i, 1] - xy[cur, 1]
+                d = dx * dx + dy * dy
+                if d < best_d:
+                    best_d = d
+                    nxt = i
+            fallbacks += 1
         tour[step] = nxt
         visited[nxt] = True
         cur = nxt
-    return tour
+    return tour, fallbacks
 
 
 # ---------------------------------------------------------------------------
@@ -262,17 +277,15 @@ def double_bridge(tour, rng):
 # ---------------------------------------------------------------------------
 
 def solve(xy, is_prime, budget):
-    print("  building NN tour ...")
-    tour = nearest_neighbor(xy, budget)
-    print(f"  NN done in {budget.elapsed():.2f}s, remaining {budget.remaining():.1f}s")
-
-    if budget.remaining() < 5:
-        return tour
-
     print("  building cKDTree + candidate list ...")
     t0 = time.perf_counter()
     candidates = build_candidates(xy, K_NEIGHBORS)
     print(f"  candidates built in {time.perf_counter() - t0:.2f}s")
+
+    print("  building fast NN tour ...")
+    t0 = time.perf_counter()
+    tour, fallbacks = fast_nn(xy, candidates, START_CITY)
+    print(f"  NN done in {time.perf_counter() - t0:.2f}s ({fallbacks} brute fallbacks), remaining {budget.remaining():.1f}s")
 
     if budget.remaining() < 1:
         return tour

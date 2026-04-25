@@ -93,3 +93,19 @@ After every 5 logged experiments:
 - X2. Pipeline: greedy-edge → 2-opt(k=20) → Or-opt(1,2,3).
 - X3. ILS: X1 inner loop, double-bridge perturbation between, run until budget.
 - X4. Best-of-N: run X1 from k=4 random NN seeds in parallel-via-loop, keep best.
+
+## Appended (cycle 1)
+
+Observations from logged runs so far: NN seed eats ~175s of the 300s budget
+(huge), 2-opt converges in <1s with candidate lists, Or-1 dominates Or-2/Or-3
+gains, ILS yields modest tail improvements.
+
+- E1. **Fast NN via cKDTree candidate list**: at each step, walk candidates[cur]
+      until finding an unvisited city (brute fallback). Should drop NN from
+      ~175s to ~5s, freeing 170s for ILS.
+- L7. **Don't-look bits for 2-opt + Or-opt**: skip cities whose neighborhood
+      hasn't changed since last failed sweep. Makes near-converged sweeps O(1)
+      per city. Frees budget for more ILS iterations.
+- Z4. **Prime post-pass**: scan steps k where k%10==0 and origin non-prime;
+      try cheap local swaps (single swap with a nearby prime, or position
+      shift by 1) to flip origin to prime, accept if net cost drops.
