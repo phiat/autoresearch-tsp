@@ -105,9 +105,27 @@ def main() -> None:
         all_pcts.append(best_pct)
         # Find the val_cost of the best-kept row for the summary line.
         best_val = float(df.loc[df["sota_for_best"].idxmax(), "val_cost"])
+
+        # Δ12: % SOTA change over the last 12 experiments (cumulative best
+        # at cycle N minus cumulative best at cycle N-12). Positive =
+        # improving. Reported as percentage points (pp) of SOTA.
+        WINDOW = 12
+        n_rows = len(df)
+        if n_rows >= WINDOW + 1:
+            past_best_pct_series = df["best_pct"].iloc[: n_rows - WINDOW]
+            past_best_pct = float(past_best_pct_series.dropna().iloc[-1]) \
+                if past_best_pct_series.notna().any() else float("nan")
+            now_best_pct = float(df["best_pct"].iloc[-1])
+            delta_pp = now_best_pct - past_best_pct \
+                if past_best_pct == past_best_pct else float("nan")
+            delta_str = f"{delta_pp:+.3f}pp"
+        else:
+            delta_str = "n/a"
+
         summary_lines.append(
             f"{name:14s}  {len(df):3d} cycles  "
-            f"best={best_val:>11,.0f}  ({best_pct:.2f}% SOTA)"
+            f"best={best_val:>11,.0f}  ({best_pct:.2f}% SOTA)  "
+            f"Δ12={delta_str}"
         )
 
     # SOTA reference at 100%.
