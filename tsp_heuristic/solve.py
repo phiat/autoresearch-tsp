@@ -510,7 +510,7 @@ def solve(xy, is_prime, budget):
     pos[tour[:-1]] = np.arange(n, dtype=np.int64)
 
     edge_penalty = np.zeros((n, K_NEIGHBORS), dtype=np.float32)
-    GLS_LAMBDA = 0.5
+    GLS_LAMBDA = 0.1
 
     print("  running GLS-augmented 2-opt + Or-{1..5} to local optimum ...")
     s2, sor = run_local(tour, pos, xy, candidates, budget, edge_penalty, GLS_LAMBDA)
