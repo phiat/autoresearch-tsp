@@ -346,7 +346,7 @@ def _prime_factor(p_one_indexed, origin_is_prime):
 
 
 @njit(cache=True, fastmath=True)
-def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, dont_look,
+def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
                          W1, b1, W2, b2, w3, b3_scalar, mu, sd):
     """2-opt sweep where candidates per ai are visited in descending MLP score
     order; first improving swap is taken (one accept per ai). Cycle-3 was
@@ -355,12 +355,7 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, dont_look,
 
     Z1 (cycle 22): the accept-test uses *prime-aware* gain at the swap's two
     boundary edges (positions ai and cj). Interior 10th-step penalties from
-    the reversed segment are not yet accounted for.
-
-    Sound don't-look (cycle 27): if dont_look[city] then skip that city as
-    `ai`. On every accepted swap, clear dont_look for ALL cities in the
-    reversed segment (their tour neighbours changed) plus the 4 endpoints.
-    Caller resets dont_look at the start of each call."""
+    the reversed segment are not yet accounted for."""
     n = len(xy)
     K = candidates.shape[1]
     H = W1.shape[0]
@@ -378,8 +373,6 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, dont_look,
     n_inf = 0
     for ai in range(1, n):
         a = tour[ai]
-        if dont_look[a]:
-            continue
         a_next = tour[ai + 1]
         d_a_anext = _euclid(xy, a, a_next)
 
@@ -456,10 +449,6 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, dont_look,
                         hi -= 1
                     n_imp += 1
                     accepted = True
-                    dont_look[a] = False
-                    dont_look[c_next] = False
-                    for ii in range(ai + 1, cj + 1):
-                        dont_look[tour[ii]] = False
             elif cj >= 1 and cj < ai - 1:
                 c_next = tour[cj + 1]
                 d_c_cnext = _euclid(xy, c, c_next)
@@ -480,12 +469,6 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates, dont_look,
                         hi -= 1
                     n_imp += 1
                     accepted = True
-                    dont_look[c] = False
-                    dont_look[a_next] = False
-                    for ii in range(cj + 1, ai + 1):
-                        dont_look[tour[ii]] = False
-        if not accepted:
-            dont_look[a] = True
     return n_imp, n_inf
 
 
@@ -494,11 +477,9 @@ def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
     W1, b1, W2, b2, w3, b3_scalar, mu, sd = weights
     sweeps = 0
     total_inf = 0
-    n = len(xy)
-    dont_look = np.zeros(n, dtype=np.bool_)
     while sweeps < max_sweeps and not budget.expired():
         n_imp, n_inf = two_opt_sweep_ranked(
-            tour, pos, xy, is_prime_f32, candidates, dont_look,
+            tour, pos, xy, is_prime_f32, candidates,
             W1, b1, W2, b2, w3, b3_scalar, mu, sd,
         )
         sweeps += 1
