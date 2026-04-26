@@ -620,7 +620,7 @@ def _ils_worker_neural(args):
 def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
                       ranked_weights, budget, workers, worker_budget_sec,
                       initial_converge=False, initial_perturb=1,
-                      initial_budget_sec=30.0, top_k_size=1):
+                      initial_budget_sec=30.0):
     """Batched parallel ILS for the neural loop. Allocates a fork pool ONCE,
     dispatches `workers` perturb+VND jobs per batch, blocks for the slowest,
     accepts the batch's best if it improves the shared best, repeats until
@@ -631,13 +631,6 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
     VND budget. Best of `workers` becomes the initial best; the standard PILS
     loop runs from there. Saves the ~30s sequential converge bottleneck and
     gains 8-way starting-point diversity. `best_cost` is ignored in this mode.
-
-    If `top_k_size>1` (C16): each subsequent batch's workers split round-robin
-    across the top-K best tours seen so far (e.g. workers 0,3,6 from parent_0;
-    1,4,7 from parent_1; 2,5 from parent_2 for K=3, workers=8). After each
-    batch, the K best tours from {prior top-K} ∪ {batch results} are kept
-    (deduplicated by val_cost). The top-K is seeded from the init batch's
-    workers when `initial_converge=True`, else only `best_tour` is in it.
 
     Returns (best_tour, best_cost, total_inference_calls, batches, accepts).
     """
@@ -650,7 +643,7 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
 
     print(f"  running PARALLEL ILS "
           f"(workers={workers}, worker_budget={worker_budget_sec:.0f}s, "
-          f"initial_converge={initial_converge}, top_k={top_k_size}) ...")
+          f"initial_converge={initial_converge}) ...")
 
     rng = np.random.default_rng(ILS_SEED)
     ctx = mp.get_context("fork")
@@ -659,26 +652,6 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
     total_iters = 0
     total_inf = 0
     accepts = 0
-    # top_k: list of (cost, tour) sorted ascending by cost. top_k[0] is best.
-    top_k = []
-
-    def merge_into_top_k(new_results):
-        # new_results: list of (cost, tour, ninf)
-        combined = list(top_k)
-        for r in new_results:
-            combined.append((r[0], r[1]))
-        combined.sort(key=lambda x: x[0])
-        seen = set()
-        out = []
-        for cost, tour in combined:
-            key = round(cost, 4)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append((cost, tour))
-            if len(out) >= top_k_size:
-                break
-        return out
 
     with ctx.Pool(processes=workers) as pool:
         if initial_converge:
@@ -692,47 +665,37 @@ def parallel_ils_loop(best_tour, best_cost, xy, is_prime, candidates,
             total_iters += len(results)
             for _, _, ninf in results:
                 total_inf += ninf
-            top_k = merge_into_top_k(results)
-            best_cost, best_tour = top_k[0]
+            cand_cost, cand_tour, _ = min(results, key=lambda r: r[0])
+            best_cost = cand_cost
+            best_tour = cand_tour
             accepts += 1
-            costs_str = ", ".join(f"{c:.0f}" for c, _ in top_k)
             print(f"    init batch (best of {workers}, "
                   f"{initial_perturb}xDB, {initial_budget_sec:.0f}s): "
-                  f"top_k=[{costs_str}], "
+                  f"best_cost={best_cost:.2f}, "
                   f"remaining {budget.remaining():.1f}s")
-        else:
-            top_k = [(best_cost, best_tour)]
 
         while not budget.expired():
             if budget.remaining() < worker_budget_sec + 2.0:
                 break
 
-            # Round-robin assign workers to top_k parents. With top_k=3,
-            # workers=8 → parents [0,1,2,0,1,2,0,1] (3/3/2 split).
-            args_list = []
-            for w in range(workers):
-                parent_idx = w % len(top_k)
-                parent_tour = top_k[parent_idx][1]
-                args_list.append(
-                    (parent_tour, int(rng.integers(0, 2**31 - 1)),
-                     worker_budget_sec, 2)
-                )
+            args_list = [
+                (best_tour, int(rng.integers(0, 2**31 - 1)),
+                 worker_budget_sec, 2)
+                for _ in range(workers)
+            ]
             results = pool.map(_ils_worker_neural, args_list)
             batch_num += 1
             total_iters += len(results)
             for _, _, ninf in results:
                 total_inf += ninf
 
-            prev_best = top_k[0][0]
-            top_k = merge_into_top_k(results)
-            cand_cost, cand_tour = top_k[0]
+            cand_cost, cand_tour, _ = min(results, key=lambda r: r[0])
             if cand_cost < best_cost:
                 best_cost = cand_cost
                 best_tour = cand_tour
                 accepts += 1
-                costs_str = ", ".join(f"{c:.0f}" for c, _ in top_k)
                 print(f"    batch {batch_num} (best of {workers}): "
-                      f"NEW BEST {best_cost:.2f} top_k=[{costs_str}], "
+                      f"NEW BEST {best_cost:.2f}, "
                       f"remaining {budget.remaining():.1f}s")
 
     print(f"  ILS done: {batch_num} batches × {workers} workers = "
@@ -795,16 +758,11 @@ def solve(xy, is_prime, budget, harvest_bufs=None, ranked_weights=None):
             # runs from the NN tour with 1× DB perturbation and 30s VND budget,
             # 8-way parallel. Best of 8 becomes initial best, freeing the ~30s
             # of single-core wall time the sequential converge consumed.
-            # C20 (C16 stacked on C19): maintain top-3 best tours across
-            # batches; each batch's 8 workers split 3/3/2 across parents
-            # (round-robin). Diversifies basin exploration vs single-parent
-            # monoculture. Top-3 is seeded from the C19 init batch's 8 results.
             best_tour, best_cost, ninf_par, batches, accepts = parallel_ils_loop(
                 tour, 0.0, xy, is_prime, candidates, ranked_weights,
                 budget,
                 workers=ILS_WORKERS, worker_budget_sec=ILS_WORKER_BUDGET,
                 initial_converge=True, initial_perturb=1, initial_budget_sec=30.0,
-                top_k_size=3,
             )
             inference_calls += ninf_par
             # Report restarts as total worker iterations for backward compat
