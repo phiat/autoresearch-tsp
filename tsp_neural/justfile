@@ -58,11 +58,18 @@ meta DESCRIPTION:
     git add -A .claude/ ideas.md program.md justfile AGENTS.md
     git commit -m "meta: {{DESCRIPTION}}"
 
-# Undo the last commit (use after a discarded experiment).
-# Creates a revert commit on top instead of rewriting history — safe
-# when sharing the branch with the tsp_heuristic loop.
+# Undo the most recent commit *that touched this loop's solve.py*
+# (use after a discarded experiment).
+# Loop-scoped lookup so we don't accidentally revert the OTHER loop's
+# (tsp_heuristic) commit when both share `main` and HEAD happens to be
+# their commit. Path-scoped via `git log -- solve.py` (from this cwd).
+# Creates a revert commit on top instead of rewriting history.
 revert:
-    git revert HEAD --no-edit
+    @last=$(git log -1 --format=%H -- solve.py); \
+    if [ -z "$last" ]; then echo "ERROR: no commit found touching tsp_neural/solve.py" >&2; exit 1; fi; \
+    short=$(git rev-parse --short "$last"); \
+    echo "reverting $short: $(git log -1 --format=%s "$last")"; \
+    git revert "$last" --no-edit
 
 # === Inspection ===========================================================
 

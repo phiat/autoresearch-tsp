@@ -65,6 +65,8 @@ def _classify_provenance(section: str) -> str:
         if "manual" in s or "injection" in s:
             return "research-manual"
         return "research-other"
+    if "manual" in s or "injection" in s or "directive" in s:
+        return "manual-injection"
     if "appended (cycle" in s or "growth tick" in s or "self-generated" in s:
         return "growth-cycle"
     if "seed ideas" in s or section == "(unknown)":
@@ -125,7 +127,7 @@ def report(ideas: list[dict], untried: list[dict]) -> str:
     # Highlight research / manual injections
     high_novelty = [u for u in untried
                     if u["provenance"].startswith("research")
-                    or u["provenance"] == "research-manual"]
+                    or u["provenance"] == "manual-injection"]
     if high_novelty:
         lines.append("")
         lines.append("High-novelty untried (research-injected — strongest "

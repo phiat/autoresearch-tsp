@@ -213,3 +213,53 @@ All ideas avoid new dependencies; partition step uses scipy.
 
 - C19. **PILS + parallelized initial converge** (skip sequential converge): replace the ~30s sequential `_vnd_local(NN_tour, ...)` with a special first PILS batch where each worker takes the raw NN tour, applies a single small perturbation (1× double-bridge), and runs full 30s VND. Take best of 8 as initial best. Saves the sequential bottleneck and adds 8-way starting-point diversity; sequential converge is currently the single biggest non-parallel chunk of the budget. [permute: I8 + PILS + initial-converge]
 
+
+## Appended (manual injection — bigger-model directive, post-cycle-47)
+
+User-requested injection: the loop has been moving SMALLER (H=32 →
+H=16, 449 params) because inference latency dominates inner loops.
+This collapses the model-capacity axis. Inject ideas that try
+BIGGER models paired with engineering tricks to keep inference
+cheap. Source: general transfer-from-NCO-literature, no Santa-specific
+material consulted.
+
+- M9. **H=64 / H=128 MLP with mandatory paired E-class speedup**:
+      train a 4-9k-param MLP (vs current 449), distill to numba inline
+      forward, use only if the paired E-class change keeps per-call
+      latency within 2× of H=16. Test variants H=64+E3 (numba distill),
+      H=128+E3+fp16. The current H=16 win was empirical proof that the
+      speed lever pays in parallel — bigger model + same speed lever
+      may move the AUC ceiling further.
+      [src: own cycle-46 C14 finding (speed lever applies in parallel)]
+
+- M10. **Distill bigger teacher into smaller student**: train an H=128
+      teacher on the full harvested dataset (offline, slow), use it to
+      label a much bigger augmented dataset (e.g. negative samples per
+      candidate position), then train an H=16 student on those labels.
+      Student stays fast at inference; teacher's capacity flows in via
+      label quality. Classical knowledge distillation.
+      [src: Hinton et al. 2015, arXiv:1503.02531; widely used in NCO
+       (e.g. Sun et al. DIFUSCO student variants)]
+
+- M11. **Wider+shallower instead of deeper**: H=64 with ONE hidden
+      layer (vs current 2 layers of H=16). Same param count budget but
+      different inductive bias — wider single-layer MLPs have been shown
+      to compete with deeper variants on simple-feature regression
+      tasks; Or-opt features are exactly that. Tests whether the
+      depth=2 in the current MLP is load-bearing.
+
+- M12. **Edge-feature transformer head (~5k params)**: replace the
+      MLP's tail with a single transformer-attention layer over the
+      8-16 nearest neighbors of the candidate move's endpoints; pooled
+      output → score. Kool 2019 attention model in micro form. GPU
+      training is essentially free given current cycle budget; inference
+      cost is the open question — pair with E2 (torch.compile).
+      [src: Kool, van Hoof, Welling 2019 ICLR; transformer microheads
+       are well-studied for edge-scoring]
+
+- E8. **CUDA graph capture for batched inference**: replace per-call
+      torch dispatch with a captured graph of the entire VND-batch
+      forward pass. Eliminates per-call kernel launch overhead, the
+      thing that killed naive E1. Pairs naturally with bigger models
+      (M9-M12) where per-call overhead would otherwise dominate.
+      [src: PyTorch CUDAGraph, torch.cuda.graph context manager]
