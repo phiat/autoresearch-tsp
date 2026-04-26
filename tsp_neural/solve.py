@@ -245,6 +245,82 @@ def run_or_opt(tour, pos, xy, candidates, budget, max_sweeps=10_000):
 
 
 @njit(cache=True, fastmath=True)
+def or_opt_2_sweep(tour, pos, xy, candidates):
+    """Or-opt 2-city segment relocation sweep. For each adjacent pair
+    (x1, x2) at positions (xi, xi+1), try inserting the segment forward
+    before each of x1's k-NN candidates; accept first improvement.
+
+    Edges removed: (prev,x1), (x2,next), (c_prev,c)  — 3 edges
+    Edges added:   (prev,next), (c_prev,x1), (x2,c)  — 3 edges
+    Gain = sum(removed) - sum(added) (Euclidean only).
+
+    Forward orientation only — reverse insertion is a separate move type
+    (Or-opt-2-rev), deferred. Returns number of accepted moves."""
+    n = len(xy)
+    K = candidates.shape[1]
+    n_imp = 0
+    for xi in range(1, n - 1):  # need both xi and xi+1 valid
+        x1 = tour[xi]
+        x2 = tour[xi + 1]
+        prev = tour[xi - 1]
+        nxt = tour[xi + 2]
+        d_prev_x1 = _euclid(xy, prev, x1)
+        d_x2_next = _euclid(xy, x2, nxt)
+        d_prev_next = _euclid(xy, prev, nxt)
+        rem_gain = d_prev_x1 + d_x2_next - d_prev_next
+        if rem_gain <= 1e-12:
+            continue
+        for kk in range(K):
+            c = candidates[x1, kk]
+            if c == 0 or c == prev or c == nxt or c == x2:
+                continue
+            cj = pos[c]
+            # Insertion point cj must be outside the segment + neighbors.
+            if cj == 0 or cj == xi or cj == xi + 1 or cj == xi + 2:
+                continue
+            c_prev = tour[cj - 1]
+            if c_prev == x1 or c_prev == x2:
+                continue
+            d_cprev_c = _euclid(xy, c_prev, c)
+            d_cprev_x1 = _euclid(xy, c_prev, x1)
+            d_x2_c = _euclid(xy, x2, c)
+            ins_gain = d_cprev_c - d_cprev_x1 - d_x2_c
+            total = rem_gain + ins_gain
+            if total > 1e-12:
+                if xi < cj:
+                    # Shift left by 2: tour[xi..cj-3] = tour[xi+2..cj-1]
+                    for i in range(xi, cj - 2):
+                        tour[i] = tour[i + 2]
+                        pos[tour[i]] = i
+                    tour[cj - 2] = x1
+                    tour[cj - 1] = x2
+                    pos[x1] = cj - 2
+                    pos[x2] = cj - 1
+                else:  # cj < xi (must be cj < xi here; xi == cj excluded above)
+                    # Shift right by 2: tour[cj+2..xi+1] = tour[cj..xi-1]
+                    for i in range(xi - 1, cj - 1, -1):
+                        tour[i + 2] = tour[i]
+                        pos[tour[i + 2]] = i + 2
+                    tour[cj] = x1
+                    tour[cj + 1] = x2
+                    pos[x1] = cj
+                    pos[x2] = cj + 1
+                n_imp += 1
+                break
+    return n_imp
+
+
+def run_or_opt_2(tour, pos, xy, candidates, budget, max_sweeps=10_000):
+    sweeps = 0
+    while sweeps < max_sweeps and not budget.expired():
+        n_imp = or_opt_2_sweep(tour, pos, xy, candidates)
+        sweeps += 1
+        if n_imp == 0:
+            break
+    return sweeps
+
+
+@njit(cache=True, fastmath=True)
 def two_opt_sweep_harvest(tour, pos, xy, is_prime_f32, candidates,
                           buf_a, buf_a_next, buf_c, buf_c_next,
                           buf_pos_delta, buf_gain, buf_accepted, count_arr):
@@ -553,11 +629,18 @@ def run_2opt_harvest(tour, pos, xy, is_prime_f32, candidates, budget, bufs, max_
 
 def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
                max_outer=10):
-    """Variable neighborhood descent: alternate learned 2-opt and classical
-    Or-opt until both find no improvement (or max_outer outer rounds — caps
-    the initial converge so ILS restarts fit).
+    """Variable neighborhood descent: rotate learned 2-opt → classical Or-opt-1
+    → classical Or-opt-2 until all three find no improvement (or max_outer
+    outer rounds — caps the initial converge so ILS restarts fit).
+
+    C18: Or-opt-2 added as a third inner move type. Cycle 19 sequential
+    Or-opt-2 alone regressed because it ate budget without ILS restarts; in
+    the PILS regime each worker has a focused 25s VND from a perturbed seed,
+    so Or-opt-2 finds 2-city segment moves Or-opt-1 misses without starving
+    the broader restart loop.
 
     Returns (total_2opt_sweeps, total_or_sweeps, total_inference_calls).
+    `total_or_sweeps` = sum of Or-opt-1 + Or-opt-2 sweeps for backward compat.
     """
     total_2opt_sweeps = 0
     total_or_sweeps = 0
@@ -572,10 +655,14 @@ def _vnd_local(t, p, xy, is_prime_f32, candidates, ranked_weights, budget,
         total_inf += ninf
         if budget.expired():
             break
-        so = run_or_opt(t, p, xy, candidates, budget)
-        total_or_sweeps += so
-        if so <= 1 and outer > 1:
-            break  # 2-opt also converged on prev iter; both done
+        so1 = run_or_opt(t, p, xy, candidates, budget)
+        total_or_sweeps += so1
+        if budget.expired():
+            break
+        so2 = run_or_opt_2(t, p, xy, candidates, budget)
+        total_or_sweeps += so2
+        if so1 <= 1 and so2 <= 1 and outer > 1:
+            break  # 2-opt also converged on prev iter; all three done
     return total_2opt_sweeps, total_or_sweeps, total_inf
 
 
