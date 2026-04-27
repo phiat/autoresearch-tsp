@@ -413,8 +413,9 @@ def two_opt_sweep_harvest(tour, pos, xy, is_prime_f32, candidates,
 
 
 @njit(cache=True, fastmath=True, inline='always')
-def _mlp_score(x, W1, b1, W2, b2, w3, b3_scalar, h1, h2):
-    """Forward pass of a 9 -> H -> H -> 1 MLP with ReLU. Returns scalar."""
+def _mlp_score(x, W1, b1, w2, b2_scalar, h1):
+    """Forward pass of a 9 -> H -> 1 MLP with ReLU (M11: wider+shallower).
+    Single hidden layer of H units; no second hidden layer. Returns scalar."""
     H = W1.shape[0]
     nin = W1.shape[1]
     for j in range(H):
@@ -422,14 +423,9 @@ def _mlp_score(x, W1, b1, W2, b2, w3, b3_scalar, h1, h2):
         for i in range(nin):
             s += W1[j, i] * x[i]
         h1[j] = s if s > 0.0 else 0.0
+    s = b2_scalar
     for j in range(H):
-        s = b2[j]
-        for i in range(H):
-            s += W2[j, i] * h1[i]
-        h2[j] = s if s > 0.0 else 0.0
-    s = b3_scalar
-    for i in range(H):
-        s += w3[i] * h2[i]
+        s += w2[j] * h1[j]
     return s
 
 
@@ -445,7 +441,7 @@ def _prime_factor(p_one_indexed, origin_is_prime):
 
 @njit(cache=True, fastmath=True)
 def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
-                         W1, b1, W2, b2, w3, b3_scalar, mu, sd):
+                         W1, b1, w2, b2_scalar, mu, sd):
     """2-opt sweep where candidates per ai are visited in descending MLP score
     order; first improving swap is taken (one accept per ai). Cycle-3 was
     'try single best then give up'; this is the I5 variant — iterate by score
@@ -453,7 +449,12 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
 
     Z1 (cycle 22): the accept-test uses *prime-aware* gain at the swap's two
     boundary edges (positions ai and cj). Interior 10th-step penalties from
-    the reversed segment are not yet accounted for."""
+    the reversed segment are not yet accounted for.
+
+    M11 (cycle 50): MLP arch is single-hidden-layer (W1, b1 → relu →
+    w2, b2_scalar). Drops the second hidden layer of the prior 2-layer H=16
+    distill; tests whether wider+shallower (H=64, 1 layer) moves the AUC
+    ceiling vs deeper+narrower (H=16, 2 layers)."""
     n = len(xy)
     K = candidates.shape[1]
     H = W1.shape[0]
@@ -461,7 +462,6 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
 
     feats = np.empty(nin, dtype=np.float32)
     h1 = np.empty(H, dtype=np.float32)
-    h2 = np.empty(H, dtype=np.float32)
     scores = np.empty(K, dtype=np.float32)
     valid = np.empty(K, dtype=np.bool_)
     used = np.empty(K, dtype=np.bool_)
@@ -504,7 +504,7 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
             if pd < 0:
                 pd = -pd
             feats[8] = (math.log1p(pd) - mu[8]) / sd[8]
-            scores[kk] = _mlp_score(feats, W1, b1, W2, b2, w3, b3_scalar, h1, h2)
+            scores[kk] = _mlp_score(feats, W1, b1, w2, b2_scalar, h1)
             valid[kk] = True
             n_inf += 1
 
@@ -572,13 +572,13 @@ def two_opt_sweep_ranked(tour, pos, xy, is_prime_f32, candidates,
 
 def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
                     weights, budget, max_sweeps=10_000):
-    W1, b1, W2, b2, w3, b3_scalar, mu, sd = weights
+    W1, b1, w2, b2_scalar, mu, sd = weights
     sweeps = 0
     total_inf = 0
     while sweeps < max_sweeps and not budget.expired():
         n_imp, n_inf = two_opt_sweep_ranked(
             tour, pos, xy, is_prime_f32, candidates,
-            W1, b1, W2, b2, w3, b3_scalar, mu, sd,
+            W1, b1, w2, b2_scalar, mu, sd,
         )
         sweeps += 1
         total_inf += n_inf
@@ -588,23 +588,29 @@ def run_2opt_ranked(tour, pos, xy, is_prime_f32, candidates,
 
 
 def load_latest_checkpoint():
+    """Load the newest checkpoint. M11 expects a single-hidden-layer MLP
+    (net.0 → ReLU → net.2). Older 2-hidden-layer checkpoints (with net.4)
+    are no longer loadable on this code path."""
     paths = sorted(CHECKPOINTS_DIR.glob("*.pt"), key=lambda p: p.stat().st_mtime)
     if not paths:
         return None, None
     ckpt_path = paths[-1]
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     sd = ckpt["state_dict"]
+    if "net.4.weight" in sd:
+        raise RuntimeError(
+            f"Checkpoint {ckpt_path.name} has 2-hidden-layer arch (net.4 present); "
+            f"M11 requires single-hidden retrain. Run `just train` first."
+        )
     W1 = sd["net.0.weight"].numpy().astype(np.float32)
     b1 = sd["net.0.bias"].numpy().astype(np.float32)
     W2 = sd["net.2.weight"].numpy().astype(np.float32)
     b2 = sd["net.2.bias"].numpy().astype(np.float32)
-    W3 = sd["net.4.weight"].numpy().astype(np.float32)
-    b3 = sd["net.4.bias"].numpy().astype(np.float32)
-    w3 = W3[0]
-    b3_scalar = float(b3[0])
+    w2 = W2[0]
+    b2_scalar = float(b2[0])
     mu = np.asarray(ckpt["mu"], dtype=np.float32)
     sd_ = np.asarray(ckpt["sd"], dtype=np.float32)
-    return ckpt_path, (W1, b1, W2, b2, w3, b3_scalar, mu, sd_)
+    return ckpt_path, (W1, b1, w2, b2_scalar, mu, sd_)
 
 
 def run_2opt_harvest(tour, pos, xy, is_prime_f32, candidates, budget, bufs, max_sweeps=10_000):
